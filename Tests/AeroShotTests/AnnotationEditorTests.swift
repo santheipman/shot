@@ -10,6 +10,7 @@ struct AnnotationEditorTests {
             ("r", EditorShortcut.selectTool(.rectangle)),
             ("p", EditorShortcut.selectTool(.pencil)),
             ("a", EditorShortcut.selectTool(.arrow)),
+            ("t", EditorShortcut.selectTool(.text)),
             ("R", EditorShortcut.selectTool(.rectangle)),
         ]
     )
@@ -50,12 +51,15 @@ struct AnnotationEditorTests {
         let model = AnnotationEditorModel(sourceImage: testImage())
         model.color = .blue
         model.thickness = .thick
+        model.textSize = .large
         model.commit(.pencil([CGPoint(x: 1, y: 2)]))
         model.color = .yellow
         model.thickness = .thin
+        model.textSize = .small
 
         #expect(model.annotations[0].style.color == .blue)
         #expect(model.annotations[0].style.thickness == .thick)
+        #expect(model.annotations[0].style.textSize == .large)
     }
 
     @Test
@@ -100,6 +104,28 @@ struct AnnotationEditorTests {
                 imageRect: imageRect,
                 imageSize: imageSize
             ) == CGPoint(x: 400, y: 200)
+        )
+    }
+
+    @Test
+    func textPlacementKeepsEditorAndExportWidthUsableNearRightEdge() {
+        let imageWidth: CGFloat = 200
+        let displayScale: CGFloat = 0.5
+        let originX = AnnotationTextLayout.adjustedOriginX(
+            clickX: 195,
+            imageWidth: imageWidth,
+            displayScale: displayScale
+        )
+        let exportedWidth = imageWidth - originX
+
+        #expect(originX == 120)
+        #expect(exportedWidth * displayScale == AnnotationTextLayout.minimumViewWidth)
+        #expect(
+            AnnotationTextLayout.adjustedOriginX(
+                clickX: 50,
+                imageWidth: imageWidth,
+                displayScale: displayScale
+            ) == 50
         )
     }
 
@@ -225,6 +251,53 @@ struct AnnotationEditorTests {
         // the top must appear at the high-y side of the exported bitmap.
         #expect(result.colorAt(x: 20, y: 35)?.redComponent ?? 1 < 0.2)
         #expect(result.colorAt(x: 20, y: 4)?.redComponent ?? 0 > 0.8)
+    }
+
+    @Test
+    func flattenedTextAppearsNearItsTopLeftCanvasOrigin() throws {
+        let source = testImage(
+            points: CGSize(width: 120, height: 80),
+            pixels: CGSize(width: 120, height: 80)
+        )
+        let annotation = Annotation(
+            shape: .text(
+                origin: CGPoint(x: 10, y: 8),
+                text: "Text",
+                maxWidth: 100
+            ),
+            style: AnnotationStyle(
+                color: .black,
+                thickness: .medium,
+                textSize: .large
+            )
+        )
+
+        let flattened = try #require(
+            AnnotationRenderer.flattenedImage(source: source, annotations: [annotation])
+        )
+        let result = try #require(
+            flattened.representations.compactMap { $0 as? NSBitmapImageRep }.first
+        )
+        var darkPixelCount = 0
+        var darkMinY = result.pixelsHigh
+        var darkMaxY = 0
+        for y in 0..<result.pixelsHigh {
+            for x in 0..<result.pixelsWide {
+                guard let color = result.colorAt(x: x, y: y) else { continue }
+                if color.alphaComponent > 0.5,
+                   color.redComponent < 0.5,
+                   color.greenComponent < 0.5,
+                   color.blueComponent < 0.5 {
+                    darkPixelCount += 1
+                    darkMinY = min(darkMinY, y)
+                    darkMaxY = max(darkMaxY, y)
+                }
+            }
+        }
+
+        #expect(darkPixelCount > 100)
+        #expect(darkMinY >= 30)
+        #expect(darkMaxY >= 55)
     }
 
     private func testImage(

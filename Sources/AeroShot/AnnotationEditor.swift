@@ -4,6 +4,7 @@ enum AnnotationTool: String, CaseIterable {
     case pencil = "Pencil"
     case rectangle = "Rectangle"
     case arrow = "Arrow"
+    case text = "Text"
 }
 
 enum EditorShortcut: Equatable {
@@ -24,6 +25,7 @@ enum EditorShortcut: Equatable {
         case "r": return .selectTool(.rectangle)
         case "p": return .selectTool(.pencil)
         case "a": return .selectTool(.arrow)
+        case "t": return .selectTool(.text)
         default: return nil
         }
     }
@@ -63,15 +65,45 @@ enum AnnotationThickness: String, CaseIterable {
     }
 }
 
+enum AnnotationTextSize: String, CaseIterable {
+    case small = "Small"
+    case medium = "Medium"
+    case large = "Large"
+
+    var points: CGFloat {
+        switch self {
+        case .small: return 16
+        case .medium: return 24
+        case .large: return 36
+        }
+    }
+}
+
+enum AnnotationTextLayout {
+    static let minimumViewWidth: CGFloat = 40
+
+    static func adjustedOriginX(
+        clickX: CGFloat,
+        imageWidth: CGFloat,
+        displayScale: CGFloat
+    ) -> CGFloat {
+        guard imageWidth > 0, displayScale > 0 else { return 0 }
+        let minimumImageWidth = min(minimumViewWidth / displayScale, imageWidth)
+        return min(max(clickX, 0), imageWidth - minimumImageWidth)
+    }
+}
+
 struct AnnotationStyle {
     var color: AnnotationColor
     var thickness: AnnotationThickness
+    var textSize: AnnotationTextSize = .medium
 }
 
 enum AnnotationShape {
     case pencil([CGPoint])
     case rectangle(start: CGPoint, end: CGPoint)
     case arrow(start: CGPoint, end: CGPoint)
+    case text(origin: CGPoint, text: String, maxWidth: CGFloat)
 }
 
 struct Annotation {
@@ -85,6 +117,7 @@ final class AnnotationEditorModel {
     var tool: AnnotationTool = .pencil
     var color: AnnotationColor = .red
     var thickness: AnnotationThickness = .medium
+    var textSize: AnnotationTextSize = .medium
 
     init(sourceImage: NSImage) {
         self.sourceImage = sourceImage
@@ -94,7 +127,11 @@ final class AnnotationEditorModel {
         annotations.append(
             Annotation(
                 shape: shape,
-                style: AnnotationStyle(color: color, thickness: thickness)
+                style: AnnotationStyle(
+                    color: color,
+                    thickness: thickness,
+                    textSize: textSize
+                )
             )
         )
     }
@@ -264,6 +301,43 @@ enum AnnotationRenderer {
                 )
             )
             context.strokePath()
+        case let .text(origin, text, maxWidth):
+            let font = NSFont.systemFont(
+                ofSize: annotation.style.textSize.points,
+                weight: .medium
+            )
+            let attributedText = NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: annotation.style.color.nsColor,
+                ]
+            )
+            let options: NSString.DrawingOptions = [
+                .usesLineFragmentOrigin,
+                .usesFontLeading,
+            ]
+            let textHeight = ceil(
+                attributedText.boundingRect(
+                    with: CGSize(width: maxWidth, height: 100_000),
+                    options: options
+                ).height
+            )
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(
+                cgContext: context,
+                flipped: true
+            )
+            attributedText.draw(
+                with: CGRect(
+                    x: origin.x,
+                    y: origin.y,
+                    width: maxWidth,
+                    height: textHeight
+                ),
+                options: options
+            )
+            NSGraphicsContext.restoreGraphicsState()
         }
         context.restoreGState()
     }

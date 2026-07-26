@@ -62,8 +62,11 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             }
             Self.save(image: flattened, from: panel)
         }
-        panel.onEscape = { [weak editor] in editor?.finish() }
+        panel.onEscape = { [weak editor] in editor?.handleEscape() }
         panel.onUndo = { [weak editor] in editor?.undo() }
+        panel.shouldHandleCanvasShortcuts = { [weak editor] in
+            editor?.isEditingText == false
+        }
         panel.onShortcut = { [weak editor] shortcut in
             switch shortcut {
             case .save:
@@ -215,10 +218,15 @@ private final class EditorPanel: NSPanel {
     var onEscape: (() -> Void)?
     var onUndo: (() -> Void)?
     var onShortcut: ((EditorShortcut) -> Void)?
+    var shouldHandleCanvasShortcuts: (() -> Bool)?
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             onEscape?()
+            return
+        }
+        guard shouldHandleCanvasShortcuts?() != false else {
+            super.keyDown(with: event)
             return
         }
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
@@ -242,16 +250,20 @@ private final class PreviewViewController: NSViewController {
     private let model: AnnotationEditorModel
     private let canvas: AnnotationCanvasView
     private let toolControl: NSSegmentedControl
+    private let styleControl: NSPopUpButton
     var onFinish: (() -> Void)?
     var onSave: (() -> Void)?
+    var isEditingText: Bool { canvas.isEditingText }
 
     init(model: AnnotationEditorModel) {
         self.model = model
         canvas = AnnotationCanvasView(model: model)
+        styleControl = NSPopUpButton()
         let toolImages = [
             NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil"),
             NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Rectangle"),
             NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow"),
+            NSImage(systemSymbolName: "textformat", accessibilityDescription: "Text"),
         ].compactMap { $0 }
         toolControl = NSSegmentedControl(
             images: toolImages,
@@ -282,6 +294,7 @@ private final class PreviewViewController: NSViewController {
         toolControl.setToolTip("Pencil (P)", forSegment: 0)
         toolControl.setToolTip("Rectangle (R)", forSegment: 1)
         toolControl.setToolTip("Arrow (A)", forSegment: 2)
+        toolControl.setToolTip("Text (T)", forSegment: 3)
 
         let color = NSPopUpButton()
         color.addItems(withTitles: AnnotationColor.allCases.map(\.rawValue))
@@ -289,18 +302,15 @@ private final class PreviewViewController: NSViewController {
         color.target = self
         color.action = #selector(changeColor(_:))
 
-        let thickness = NSPopUpButton()
-        thickness.addItems(withTitles: AnnotationThickness.allCases.map(\.rawValue))
-        thickness.selectItem(withTitle: model.thickness.rawValue)
-        thickness.toolTip = "Line thickness"
-        thickness.target = self
-        thickness.action = #selector(changeThickness(_:))
+        configureStyleControl()
+        styleControl.target = self
+        styleControl.action = #selector(changeStyle(_:))
 
         let save = NSButton(title: "Save", target: self, action: #selector(save))
         save.toolTip = "Save (S)"
 
         let controls = NSStackView(views: [
-            toolControl, color, thickness, NSView(), save,
+            toolControl, color, styleControl, NSView(), save,
         ])
         controls.translatesAutoresizingMaskIntoConstraints = false
         controls.orientation = .horizontal
@@ -336,7 +346,8 @@ private final class PreviewViewController: NSViewController {
     }
 
     func flattenedImage() -> NSImage? {
-        AnnotationRenderer.flattenedImage(
+        canvas.endTextEditing()
+        return AnnotationRenderer.flattenedImage(
             source: model.sourceImage,
             annotations: model.annotations
         )
@@ -344,6 +355,12 @@ private final class PreviewViewController: NSViewController {
 
     func finish() {
         onFinish?()
+    }
+
+    func handleEscape() {
+        if !canvas.endTextEditing() {
+            finish()
+        }
     }
 
     @objc func undo() {
@@ -357,10 +374,13 @@ private final class PreviewViewController: NSViewController {
     }
 
     func selectTool(_ tool: AnnotationTool) {
+        canvas.endTextEditing()
         model.tool = tool
         if let index = AnnotationTool.allCases.firstIndex(of: tool) {
             toolControl.selectedSegment = index
         }
+        configureStyleControl()
+        canvas.updateCursor()
     }
 
     @objc private func changeTool(_ sender: NSSegmentedControl) {
@@ -371,17 +391,50 @@ private final class PreviewViewController: NSViewController {
 
     @objc private func changeColor(_ sender: NSPopUpButton) {
         model.color = AnnotationColor(rawValue: sender.titleOfSelectedItem ?? "") ?? .red
+        canvas.updateTextEditorStyle()
     }
 
-    @objc private func changeThickness(_ sender: NSPopUpButton) {
-        model.thickness =
-            AnnotationThickness(rawValue: sender.titleOfSelectedItem ?? "") ?? .medium
+    @objc private func changeStyle(_ sender: NSPopUpButton) {
+        if model.tool == .text {
+            model.textSize =
+                AnnotationTextSize(rawValue: sender.titleOfSelectedItem ?? "") ?? .medium
+            canvas.updateTextEditorStyle()
+        } else {
+            model.thickness =
+                AnnotationThickness(rawValue: sender.titleOfSelectedItem ?? "") ?? .medium
+        }
+    }
+
+    private func configureStyleControl() {
+        styleControl.removeAllItems()
+        if model.tool == .text {
+            styleControl.addItems(withTitles: AnnotationTextSize.allCases.map(\.rawValue))
+            styleControl.selectItem(withTitle: model.textSize.rawValue)
+            styleControl.toolTip = "Text size"
+        } else {
+            styleControl.addItems(withTitles: AnnotationThickness.allCases.map(\.rawValue))
+            styleControl.selectItem(withTitle: model.thickness.rawValue)
+            styleControl.toolTip = "Line thickness"
+        }
     }
 }
 
-private final class AnnotationCanvasView: NSView {
+private final class InlineTextView: NSTextView {
+    var onEscape: (() -> Void)?
+
+    override func cancelOperation(_ sender: Any?) {
+        onEscape?()
+    }
+}
+
+private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     private let model: AnnotationEditorModel
     private var draft: AnnotationShape?
+    private var textEditor: InlineTextView?
+    private var textOrigin: CGPoint?
+    private var textMaxWidth: CGFloat?
+
+    var isEditingText: Bool { textEditor != nil }
 
     init(model: AnnotationEditorModel) {
         self.model = model
@@ -393,6 +446,15 @@ private final class AnnotationCanvasView: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        updateTextEditorGeometry()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: model.tool == .text ? .iBeam : .crosshair)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -429,11 +491,15 @@ private final class AnnotationCanvasView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        endTextEditing()
         guard let point = imagePoint(for: event) else { return }
         switch model.tool {
         case .pencil: draft = .pencil([point])
         case .rectangle: draft = .rectangle(start: point, end: point)
         case .arrow: draft = .arrow(start: point, end: point)
+        case .text:
+            beginTextEditing(at: point)
+            return
         }
         needsDisplay = true
     }
@@ -465,8 +531,127 @@ private final class AnnotationCanvasView: NSView {
             self.draft = .rectangle(start: start, end: point)
         case let .arrow(start, _):
             self.draft = .arrow(start: start, end: point)
+        case .text:
+            break
         }
         needsDisplay = true
+    }
+
+    func updateCursor() {
+        window?.invalidateCursorRects(for: self)
+    }
+
+    func updateTextEditorStyle() {
+        guard let textEditor else { return }
+        textEditor.textColor = model.color.nsColor
+        updateTextEditorGeometry()
+    }
+
+    @discardableResult
+    func endTextEditing() -> Bool {
+        guard let textEditor, let textOrigin, let textMaxWidth else { return false }
+        let text = textEditor.string
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            model.commit(
+                .text(
+                    origin: textOrigin,
+                    text: text,
+                    maxWidth: textMaxWidth
+                )
+            )
+        }
+        textEditor.removeFromSuperview()
+        self.textEditor = nil
+        self.textOrigin = nil
+        self.textMaxWidth = nil
+        window?.makeFirstResponder(nil)
+        needsDisplay = true
+        return true
+    }
+
+    func textDidChange(_ notification: Notification) {
+        resizeTextEditor()
+    }
+
+    private func beginTextEditing(at point: CGPoint) {
+        let imageRect = AnnotationRenderer.aspectFitRect(
+            imageSize: model.sourceImage.size,
+            in: bounds
+        )
+        let displayScale = imageRect.width / max(model.sourceImage.size.width, 1)
+        let origin = CGPoint(
+            x: AnnotationTextLayout.adjustedOriginX(
+                clickX: point.x,
+                imageWidth: model.sourceImage.size.width,
+                displayScale: displayScale
+            ),
+            y: point.y
+        )
+        let inset = CGSize(width: 3, height: 2)
+        let editor = InlineTextView(
+            frame: CGRect(origin: .zero, size: CGSize(width: 40, height: 40))
+        )
+        editor.delegate = self
+        editor.textColor = model.color.nsColor
+        editor.backgroundColor = .clear
+        editor.drawsBackground = false
+        editor.isRichText = false
+        editor.allowsUndo = true
+        editor.isHorizontallyResizable = false
+        editor.isVerticallyResizable = true
+        editor.autoresizingMask = []
+        editor.textContainerInset = inset
+        editor.textContainer?.widthTracksTextView = true
+        editor.textContainer?.lineFragmentPadding = 0
+        editor.onEscape = { [weak self] in
+            self?.endTextEditing()
+        }
+        editor.wantsLayer = true
+        editor.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.65).cgColor
+        editor.layer?.borderWidth = 1
+        editor.layer?.cornerRadius = 3
+
+        addSubview(editor)
+        textEditor = editor
+        textOrigin = origin
+        textMaxWidth = max(model.sourceImage.size.width - origin.x, 1)
+        updateTextEditorGeometry()
+        window?.makeFirstResponder(editor)
+    }
+
+    private func updateTextEditorGeometry() {
+        guard let textEditor, let textOrigin, let textMaxWidth else { return }
+        let imageRect = AnnotationRenderer.aspectFitRect(
+            imageSize: model.sourceImage.size,
+            in: bounds
+        )
+        let scale = imageRect.width / max(model.sourceImage.size.width, 1)
+        let inset = textEditor.textContainerInset
+        let viewPoint = CGPoint(
+            x: imageRect.minX + textOrigin.x * scale,
+            y: imageRect.minY + textOrigin.y * scale
+        )
+        textEditor.font = NSFont.systemFont(
+            ofSize: model.textSize.points * scale,
+            weight: .medium
+        )
+        textEditor.frame.origin = CGPoint(
+            x: viewPoint.x - inset.width,
+            y: viewPoint.y - inset.height
+        )
+        textEditor.frame.size.width = textMaxWidth * scale + inset.width * 2
+        resizeTextEditor()
+    }
+
+    private func resizeTextEditor() {
+        guard let textEditor, let layoutManager = textEditor.layoutManager,
+              let textContainer = textEditor.textContainer else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        let usedHeight = layoutManager.usedRect(for: textContainer).height
+        textEditor.frame.size.height = max(
+            usedHeight + textEditor.textContainerInset.height * 2,
+            (textEditor.font?.pointSize ?? 16) * 1.5 + 4
+        )
     }
 
     private func imagePoint(for event: NSEvent, clamped: Bool = false) -> CGPoint? {

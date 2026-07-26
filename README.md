@@ -8,13 +8,15 @@ window managers.
 Press **Command–Shift–3** to capture the display containing the pointer, or
 **Command–Shift–4** and drag an area. AeroShot opens the captured image
 in a floating annotation editor in the currently focused AeroSpace workspace.
-Draw with Pencil, Rectangle, or Arrow, and choose from six colors and three
-line thicknesses. **Command–Z** undoes the last annotation. Press **Escape** to
-copy the flattened image to the clipboard and close the editor. **Save** writes
-a timestamped PNG directly to `~/Documents/screenshot` and keeps the editor
-open. In the editor, press **P** for Pencil, **R** for Rectangle, **A** for
-Arrow, or **S** to save. Closing with the window control does not copy. The
-menu-bar item also has matching capture commands.
+Draw with Pencil, Rectangle, or Arrow, or place text directly on the image.
+Choose from six colors, three line thicknesses, and three text sizes.
+**Command–Z** undoes the last annotation. Press **Escape** while typing to
+commit text; otherwise it copies the flattened image to the clipboard and
+closes the editor. **Save** writes a timestamped PNG directly to
+`~/Documents/screenshot` and keeps the editor open. In the editor, press **P**
+for Pencil, **R** for Rectangle, **A** for Arrow, **T** for Text, or **S** to
+save. Closing with the window control does not copy. The menu-bar item also has
+matching capture commands.
 
 Press **Command–Shift–2** and drag an area to pin it. Each pin is an independent,
 borderless image card that floats above normal windows and follows you between
@@ -65,7 +67,7 @@ manager. The lifecycle rules above are the part AeroShot controls and tests.
 - Native screen capture at the selected coordinates
 - A new floating annotation editor for every capture
 - Multiple movable and resizable image pins that follow between workspaces
-- Pencil, rectangle, and arrow annotations
+- Pencil, rectangle, arrow, and text annotations
 - Red, yellow, green, blue, black, and white annotation colors
 - Thin, medium, and thick annotation strokes
 - Undo the most recent annotation with Command–Z
