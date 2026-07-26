@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import AeroShot
+@testable import Shot
 
 @Suite("Annotation editor")
 struct AnnotationEditorTests {
@@ -133,7 +133,7 @@ struct AnnotationEditorTests {
     func screenshotNamesUseANumericSuffixWhenTheTimestampAlreadyExists() {
         let directory = URL(fileURLWithPath: "/tmp/screenshots", isDirectory: true)
         let firstURL = directory.appendingPathComponent(
-            "AeroShot 2026-07-26 at 18.45.00.png"
+            "Shot 2026-07-26 at 18.45.00.png"
         )
         let secondURL = ScreenshotFileNamer.availableURL(
             in: directory,
@@ -141,7 +141,7 @@ struct AnnotationEditorTests {
             fileExists: { $0 == firstURL }
         )
 
-        #expect(secondURL.lastPathComponent == "AeroShot 2026-07-26 at 18.45.00 2.png")
+        #expect(secondURL.lastPathComponent == "Shot 2026-07-26 at 18.45.00 2.png")
     }
 
     @Test

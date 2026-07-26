@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = item.button {
             button.image = NSImage(
                 systemSymbolName: "viewfinder",
-                accessibilityDescription: "AeroShot"
+                accessibilityDescription: "Shot"
             )
         }
 
@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit AeroShot",
+            title: "Quit Shot",
             action: #selector(quit),
             keyEquivalent: "q"
         )

@@ -5,9 +5,9 @@ set -euo pipefail
 script_dir=${0:A:h}
 project_dir=${script_dir:h}
 configuration=${1:-release}
-app_dir="$project_dir/dist/AeroShot.app"
-process_name="AeroShot"
-bundle_identifier="dev.sanvq.aeroshot"
+app_dir="$project_dir/dist/Shot.app"
+process_name="Shot"
+bundle_identifier="dev.sanvq.shot"
 
 "$script_dir/build-app.sh" "$configuration"
 
@@ -22,7 +22,7 @@ if pgrep -x "$process_name" >/dev/null; then
     done
 
     if pgrep -x "$process_name" >/dev/null; then
-        print -u2 "AeroShot did not quit after 5 seconds; not launching a duplicate."
+        print -u2 "Shot did not quit after 5 seconds; not launching a duplicate."
         exit 1
     fi
 fi

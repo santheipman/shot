@@ -156,7 +156,7 @@ enum ScreenshotFileNamer {
         while true {
             let suffix = number == 1 ? "" : " \(number)"
             let url = directory.appendingPathComponent(
-                "AeroShot \(timestamp)\(suffix).png"
+                "Shot \(timestamp)\(suffix).png"
             )
             if !fileExists(url) {
                 return url

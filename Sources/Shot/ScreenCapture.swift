@@ -11,9 +11,9 @@ enum ScreenCaptureError: LocalizedError, Equatable {
         case .invalidRectangle:
             return "The selected area is empty."
         case .displayNotFound:
-            return "AeroShot couldn’t find the display containing the pointer."
+            return "Shot couldn’t find the display containing the pointer."
         case .permissionRequired:
-            return "Allow AeroShot in System Settings → Privacy & Security → Screen & System Audio Recording, then relaunch it."
+            return "Allow Shot in System Settings → Privacy & Security → Screen & System Audio Recording, then relaunch it."
         case .captureFailed:
             return "macOS did not return an image for the selected area."
         }

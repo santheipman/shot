@@ -4,8 +4,8 @@ x509_extensions = code_signing
 prompt = no
 
 [distinguished_name]
-CN = AeroShot Local Development
-O = AeroShot Local Development
+CN = Shot Local Development
+O = Shot Local Development
 
 [code_signing]
 basicConstraints = critical,CA:false

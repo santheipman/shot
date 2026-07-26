@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>AeroShot</string>
+    <string>Shot</string>
     <key>CFBundleExecutable</key>
-    <string>AeroShot</string>
+    <string>Shot</string>
     <key>CFBundleIdentifier</key>
-    <string>dev.sanvq.aeroshot</string>
+    <string>dev.sanvq.shot</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>AeroShot</string>
+    <string>Shot</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -27,6 +27,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>AeroShot needs screen recording access to capture the area you select.</string>
+    <string>Shot needs screen recording access to capture the area you select.</string>
 </dict>
 </plist>

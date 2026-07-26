@@ -13,7 +13,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             backing: .buffered,
             defer: false
         )
-        panel.title = "AeroShot"
+        panel.title = "Shot"
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -33,7 +33,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             guard let flattened = editor?.flattenedImage() else {
                 Self.showError(
                     title: "Copy failed",
-                    message: "AeroShot couldn’t prepare the edited image.",
+                    message: "Shot couldn’t prepare the edited image.",
                     from: panel
                 )
                 return
@@ -43,7 +43,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             guard pasteboard.writeObjects([flattened]) else {
                 Self.showError(
                     title: "Copy failed",
-                    message: "AeroShot couldn’t write the edited image to the clipboard.",
+                    message: "Shot couldn’t write the edited image to the clipboard.",
                     from: panel
                 )
                 return
@@ -55,7 +55,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             guard let flattened = editor?.flattenedImage() else {
                 Self.showError(
                     title: "Save failed",
-                    message: "AeroShot couldn’t prepare the edited image.",
+                    message: "Shot couldn’t prepare the edited image.",
                     from: panel
                 )
                 return
@@ -86,7 +86,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
 
     override func showWindow(_ sender: Any?) {
         guard let window else { return }
-        // Mark the newly created editor as key before activating AeroShot.
+        // Mark the newly created editor as key before activating Shot.
         // AppKit then brings forward this key window rather than an older
         // editor that belongs to another workspace.
         window.makeKeyAndOrderFront(sender)
@@ -155,7 +155,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             EventLog.shared.write("image_save_failed reason=encoding")
             showError(
                 title: "Save failed",
-                message: "AeroShot couldn’t encode the edited image as PNG.",
+                message: "Shot couldn’t encode the edited image as PNG.",
                 from: window
             )
             return
@@ -172,7 +172,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             EventLog.shared.write("image_save_failed error=\(error.localizedDescription)")
             showError(
                 title: "Save failed",
-                message: "AeroShot couldn’t save the image.\n\n\(error.localizedDescription)",
+                message: "Shot couldn’t save the image.\n\n\(error.localizedDescription)",
                 from: window
             )
         }

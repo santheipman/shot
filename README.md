@@ -1,4 +1,4 @@
-# AeroShot
+# Shot
 
 A native macOS screenshot app that works predictably across AeroSpace
 workspaces without using AeroSpace APIs. It runs in the menu bar with no Dock
@@ -22,7 +22,7 @@ Pins can be moved and resized. Hover over a pin to show its close button.
 
 ```sh
 ./scripts/build-app.sh release
-open dist/AeroShot.app
+open dist/Shot.app
 ```
 
 To rebuild and restart the running app:
@@ -32,7 +32,7 @@ To rebuild and restart the running app:
 ```
 
 Both scripts accept `debug` instead of `release`. The app bundle is written to
-`dist/AeroShot.app`.
+`dist/Shot.app`.
 
 ### Code signing
 
@@ -46,21 +46,21 @@ Create the local identity once on a new machine:
 ./scripts/create-local-signing-identity.sh
 ```
 
-After the first launch, enable AeroShot in **System Settings → Privacy &
+After the first launch, enable Shot in **System Settings → Privacy &
 Security → Screen & System Audio Recording**, then restart the app.
 
 If the project moves, update the keychain search path:
 
 ```sh
 security list-keychains -d user -s \
-  "/absolute/path/to/aeroshot/.signing/AeroShot.keychain-db" \
+  "/absolute/path/to/shot/.signing/Shot.keychain-db" \
   "$HOME/Library/Keychains/login.keychain-db"
 ```
 
 To use another identity:
 
 ```sh
-AEROSHOT_CODESIGN_IDENTITY='Apple Development: Name' \
+SHOT_CODESIGN_IDENTITY='Apple Development: Name' \
   ./scripts/build-app.sh release
 ```
 

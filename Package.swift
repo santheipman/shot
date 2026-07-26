@@ -3,25 +3,25 @@
 import PackageDescription
 
 let package = Package(
-    name: "AeroShot",
+    name: "Shot",
     platforms: [
         .macOS(.v13),
     ],
     products: [
-        .executable(name: "AeroShot", targets: ["AeroShot"]),
+        .executable(name: "Shot", targets: ["Shot"]),
     ],
     targets: [
         .executableTarget(
-            name: "AeroShot",
-            path: "Sources/AeroShot",
+            name: "Shot",
+            path: "Sources/Shot",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
         ),
         .testTarget(
-            name: "AeroShotTests",
-            dependencies: ["AeroShot"],
-            path: "Tests/AeroShotTests"
+            name: "ShotTests",
+            dependencies: ["Shot"],
+            path: "Tests/ShotTests"
         ),
     ]
 )

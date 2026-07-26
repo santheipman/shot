@@ -166,7 +166,7 @@ final class CaptureCoordinator {
 
     private static func presentCaptureError(_ error: Error) {
         let alert = NSAlert()
-        alert.messageText = "AeroShot couldn’t capture the screen"
+        alert.messageText = "Shot couldn’t capture the screen"
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")

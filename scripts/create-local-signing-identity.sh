@@ -5,11 +5,11 @@ set -euo pipefail
 script_dir=${0:A:h}
 project_dir=${script_dir:h}
 signing_dir="$project_dir/.signing"
-keychain_path="$signing_dir/AeroShot.keychain-db"
+keychain_path="$signing_dir/Shot.keychain-db"
 password_file="$signing_dir/keychain-password"
-identity_name="AeroShot Local Development"
+identity_name="Shot Local Development"
 openssl_config="$project_dir/Resources/LocalCodeSigning.openssl.cnf"
-temporary_dir=$(mktemp -d /private/tmp/aeroshot-signing.XXXXXX)
+temporary_dir=$(mktemp -d /private/tmp/shot-signing.XXXXXX)
 
 function cleanup() {
     rm -rf "$temporary_dir"
@@ -18,7 +18,7 @@ function cleanup() {
 trap cleanup EXIT
 
 if [[ -e "$keychain_path" || -e "$password_file" ]]; then
-    print -u2 "AeroShot signing files already exist at $signing_dir"
+    print -u2 "Shot signing files already exist at $signing_dir"
     print -u2 "Refusing to overwrite a signing identity."
     exit 1
 fi
@@ -68,7 +68,7 @@ chmod 600 "$password_file"
     "$temporary_dir/certificate.pem"
 
 # Keep the isolated keychain in the user search list so macOS can resolve the
-# certificate trust when AeroShot runs. The private key remains protected by
+# certificate trust when Shot runs. The private key remains protected by
 # the project-local keychain password and its codesign-only access control.
 user_keychains=(
     "${(@f)$(/usr/bin/security list-keychains -d user |

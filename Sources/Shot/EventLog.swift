@@ -4,12 +4,12 @@ final class EventLog {
     static let shared = EventLog()
 
     private let fileURL: URL?
-    private let queue = DispatchQueue(label: "dev.sanvq.aeroshot.event-log")
+    private let queue = DispatchQueue(label: "dev.sanvq.shot.event-log")
     private let formatter = ISO8601DateFormatter()
     var isFileLoggingEnabled: Bool { fileURL != nil }
 
     private init() {
-        guard let path = ProcessInfo.processInfo.environment["AEROSHOT_EVENT_LOG"] else {
+        guard let path = ProcessInfo.processInfo.environment["SHOT_EVENT_LOG"] else {
             fileURL = nil
             return
         }
@@ -18,7 +18,7 @@ final class EventLog {
 
     func write(_ message: String) {
         let line = "\(formatter.string(from: Date())) \(message)\n"
-        NSLog("AeroShot: %@", message)
+        NSLog("Shot: %@", message)
 
         guard let fileURL else { return }
         queue.async {

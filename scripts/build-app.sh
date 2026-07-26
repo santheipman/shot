@@ -6,11 +6,11 @@ script_dir=${0:A:h}
 project_dir=${script_dir:h}
 configuration=${1:-release}
 output_dir="$project_dir/dist"
-app_dir="$output_dir/AeroShot.app"
-codesign_identity=${AEROSHOT_CODESIGN_IDENTITY:--}
-codesign_keychain=${AEROSHOT_CODESIGN_KEYCHAIN:-}
-codesign_password_file=${AEROSHOT_CODESIGN_PASSWORD_FILE:-}
-local_keychain="$project_dir/.signing/AeroShot.keychain-db"
+app_dir="$output_dir/Shot.app"
+codesign_identity=${SHOT_CODESIGN_IDENTITY:--}
+codesign_keychain=${SHOT_CODESIGN_KEYCHAIN:-}
+codesign_password_file=${SHOT_CODESIGN_PASSWORD_FILE:-}
+local_keychain="$project_dir/.signing/Shot.keychain-db"
 local_password_file="$project_dir/.signing/keychain-password"
 restore_keychain_search=false
 original_keychains=()
@@ -23,15 +23,15 @@ function restore_keychains() {
 }
 
 trap restore_keychains EXIT
-swiftpm_cache="/private/tmp/aeroshot-swiftpm-cache"
-swiftpm_config="/private/tmp/aeroshot-swiftpm-config"
-swiftpm_security="/private/tmp/aeroshot-swiftpm-security"
-clang_cache="/private/tmp/aeroshot-clang-module-cache"
+swiftpm_cache="/private/tmp/shot-swiftpm-cache"
+swiftpm_config="/private/tmp/shot-swiftpm-config"
+swiftpm_security="/private/tmp/shot-swiftpm-security"
+clang_cache="/private/tmp/shot-clang-module-cache"
 
 mkdir -p "$swiftpm_cache" "$swiftpm_config" "$swiftpm_security" "$clang_cache"
 
 if [[ "$codesign_identity" == "-" && -f "$local_keychain" ]]; then
-    codesign_identity="AeroShot Local Development"
+    codesign_identity="Shot Local Development"
     codesign_keychain="$local_keychain"
     codesign_password_file="$local_password_file"
 fi
@@ -53,7 +53,7 @@ swift build "${swift_args[@]}" -c "$configuration"
 binary_dir=$(swift build "${swift_args[@]}" -c "$configuration" --show-bin-path)
 mkdir -p "$app_dir/Contents/MacOS"
 mkdir -p "$app_dir/Contents/Resources"
-cp "$binary_dir/AeroShot" "$app_dir/Contents/MacOS/AeroShot"
+cp "$binary_dir/Shot" "$app_dir/Contents/MacOS/Shot"
 cp "$project_dir/Resources/Info.plist" "$app_dir/Contents/Info.plist"
 
 codesign_args=(--force --deep --sign "$codesign_identity")

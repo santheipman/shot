@@ -1,6 +1,6 @@
 import AppKit
 import Testing
-@testable import AeroShot
+@testable import Shot
 
 @Suite
 struct CaptureCoordinatorTests {
