@@ -1,0 +1,2 @@
+- write simple code / simple solution. dont overenginner.
+- we and this machine is the only user of this app for now.
