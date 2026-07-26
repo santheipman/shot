@@ -4,11 +4,10 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
     var onClose: ((Int) -> Void)?
     var identifier: Int? { window?.windowNumber }
 
-    private let image: NSImage
     init(image: NSImage, captureRect: CGRect) {
-        self.image = image
+        let model = AnnotationEditorModel(sourceImage: image)
 
-        let panel = NSPanel(
+        let panel = EditorPanel(
             contentRect: .zero,
             styleMask: [.titled, .closable, .resizable, .utilityWindow],
             backing: .buffered,
@@ -21,17 +20,59 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
         panel.isRestorable = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.fullScreenAuxiliary]
-        panel.minSize = NSSize(width: 280, height: 180)
-        panel.titlebarAppearsTransparent = true
+        panel.minSize = NSSize(width: 480, height: 240)
+        panel.titlebarAppearsTransparent = false
+        panel.titlebarSeparatorStyle = .line
+        panel.hasShadow = true
+        panel.backgroundColor = .windowBackgroundColor
 
         super.init(window: panel)
         panel.delegate = self
-        panel.contentViewController = PreviewViewController(
-            image: image,
-            onCopy: { Self.copyToPasteboard(image) },
-            onSave: { Self.save(image: image, from: panel) },
-            onClose: { panel.close() }
-        )
+        let editor = PreviewViewController(model: model)
+        editor.onFinish = { [weak panel, weak editor] in
+            guard let flattened = editor?.flattenedImage() else {
+                Self.showError(
+                    title: "Copy failed",
+                    message: "AeroShot couldn’t prepare the edited image.",
+                    from: panel
+                )
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.writeObjects([flattened]) else {
+                Self.showError(
+                    title: "Copy failed",
+                    message: "AeroShot couldn’t write the edited image to the clipboard.",
+                    from: panel
+                )
+                return
+            }
+            EventLog.shared.write("edited_image_copied")
+            panel?.close()
+        }
+        editor.onSave = { [weak panel, weak editor] in
+            guard let flattened = editor?.flattenedImage() else {
+                Self.showError(
+                    title: "Save failed",
+                    message: "AeroShot couldn’t prepare the edited image.",
+                    from: panel
+                )
+                return
+            }
+            Self.save(image: flattened, from: panel)
+        }
+        panel.onEscape = { [weak editor] in editor?.finish() }
+        panel.onUndo = { [weak editor] in editor?.undo() }
+        panel.onShortcut = { [weak editor] shortcut in
+            switch shortcut {
+            case .save:
+                editor?.save()
+            case let .selectTool(tool):
+                editor?.selectTool(tool)
+            }
+        }
+        panel.contentViewController = editor
 
         sizeAndPosition(panel: panel, image: image, captureRect: captureRect)
     }
@@ -41,10 +82,15 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
     }
 
     override func showWindow(_ sender: Any?) {
-        guard let panel = window else { return }
-        // Present only this newly created editor. App-wide activation can raise
-        // an existing editor from a different workspace.
-        panel.makeKeyAndOrderFront(sender)
+        guard let window else { return }
+        // Mark the newly created editor as key before activating AeroShot.
+        // AppKit then brings forward this key window rather than an older
+        // editor that belongs to another workspace.
+        window.makeKeyAndOrderFront(sender)
+        if !NSApp.isActive {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(sender)
+        }
     }
 
     func present() {
@@ -66,12 +112,9 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
     private func sizeAndPosition(panel: NSPanel, image: NSImage, captureRect: CGRect) {
         let screen = Self.screen(containingQuartzPoint: captureRect.origin) ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1200, height: 800)
-        let maximum = CGSize(
-            width: visibleFrame.width * 0.72,
-            height: visibleFrame.height * 0.72
-        )
-        let minimum = CGSize(width: 320, height: 220)
-        let toolbarHeight: CGFloat = 52
+        let maximum = CGSize(width: visibleFrame.width * 0.78, height: visibleFrame.height * 0.78)
+        let minimum = CGSize(width: 560, height: 280)
+        let toolbarHeight: CGFloat = 56
         let imageRatio = max(image.size.width / max(image.size.height, 1), 0.1)
 
         var contentWidth = min(max(image.size.width, minimum.width), maximum.width)
@@ -80,49 +123,71 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
             imageHeight = maximum.height - toolbarHeight
             contentWidth = imageHeight * imageRatio
         }
-
-        let contentSize = CGSize(
-            width: max(contentWidth, minimum.width),
-            height: max(imageHeight + toolbarHeight, minimum.height)
+        panel.setContentSize(
+            CGSize(
+                width: max(contentWidth, minimum.width),
+                height: max(imageHeight + toolbarHeight, minimum.height)
+            )
         )
-        panel.setContentSize(contentSize)
-
-        let frame = panel.frame
-        let origin = CGPoint(
-            x: visibleFrame.midX - frame.width / 2,
-            y: visibleFrame.midY - frame.height / 2
+        panel.setFrameOrigin(
+            CGPoint(
+                x: visibleFrame.midX - panel.frame.width / 2,
+                y: visibleFrame.midY - panel.frame.height / 2
+            )
         )
-        panel.setFrameOrigin(origin)
     }
 
-    private static func copyToPasteboard(_ image: NSImage) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects([image])
-        EventLog.shared.write("image_copied")
+    private static func save(image: NSImage, from window: NSWindow?) {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Documents/screenshot", isDirectory: true)
+        let url = ScreenshotFileNamer.availableURL(
+            in: directory,
+            timestamp: fileTimestamp()
+        )
+        guard
+            let tiff = image.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiff),
+            let png = bitmap.representation(using: .png, properties: [:])
+        else {
+            EventLog.shared.write("image_save_failed reason=encoding")
+            showError(
+                title: "Save failed",
+                message: "AeroShot couldn’t encode the edited image as PNG.",
+                from: window
+            )
+            return
+        }
+
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            try png.write(to: url, options: .atomic)
+            EventLog.shared.write("image_saved path=\(url.path)")
+        } catch {
+            EventLog.shared.write("image_save_failed error=\(error.localizedDescription)")
+            showError(
+                title: "Save failed",
+                message: "AeroShot couldn’t save the image.\n\n\(error.localizedDescription)",
+                from: window
+            )
+        }
     }
 
-    private static func save(image: NSImage, from window: NSWindow) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "AeroShot \(Self.fileTimestamp()).png"
-        panel.beginSheetModal(for: window) { response in
-            guard response == .OK, let url = panel.url else { return }
-            guard
-                let tiff = image.tiffRepresentation,
-                let bitmap = NSBitmapImageRep(data: tiff),
-                let png = bitmap.representation(using: .png, properties: [:])
-            else {
-                EventLog.shared.write("image_save_failed encoding")
-                return
-            }
-
-            do {
-                try png.write(to: url, options: .atomic)
-                EventLog.shared.write("image_saved path=\(url.path)")
-            } catch {
-                EventLog.shared.write("image_save_failed error=\(error.localizedDescription)")
-            }
+    private static func showError(
+        title: String,
+        message: String,
+        from window: NSWindow?
+    ) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        if let window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
         }
     }
 
@@ -146,23 +211,57 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
     }
 }
 
-private final class PreviewViewController: NSViewController {
-    private let image: NSImage
-    private let onCopy: () -> Void
-    private let onSave: () -> Void
-    private let onClose: () -> Void
+private final class EditorPanel: NSPanel {
+    var onEscape: (() -> Void)?
+    var onUndo: (() -> Void)?
+    var onShortcut: ((EditorShortcut) -> Void)?
 
-    init(
-        image: NSImage,
-        onCopy: @escaping () -> Void,
-        onSave: @escaping () -> Void,
-        onClose: @escaping () -> Void
-    ) {
-        self.image = image
-        self.onCopy = onCopy
-        self.onSave = onSave
-        self.onClose = onClose
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onEscape?()
+            return
+        }
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "z" {
+            onUndo?()
+            return
+        }
+        if !event.isARepeat,
+           let shortcut = EditorShortcut.resolve(
+               characters: event.charactersIgnoringModifiers,
+               modifiers: event.modifierFlags
+           ) {
+            onShortcut?(shortcut)
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
+private final class PreviewViewController: NSViewController {
+    private let model: AnnotationEditorModel
+    private let canvas: AnnotationCanvasView
+    private let toolControl: NSSegmentedControl
+    var onFinish: (() -> Void)?
+    var onSave: (() -> Void)?
+
+    init(model: AnnotationEditorModel) {
+        self.model = model
+        canvas = AnnotationCanvasView(model: model)
+        let toolImages = [
+            NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil"),
+            NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Rectangle"),
+            NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow"),
+        ].compactMap { $0 }
+        toolControl = NSSegmentedControl(
+            images: toolImages,
+            trackingMode: .selectOne,
+            target: nil,
+            action: nil
+        )
         super.init(nibName: nil, bundle: nil)
+        toolControl.target = self
+        toolControl.action = #selector(changeTool(_:))
     }
 
     required init?(coder: NSCoder) {
@@ -171,49 +270,222 @@ private final class PreviewViewController: NSViewController {
 
     override func loadView() {
         let root = NSView()
+        root.wantsLayer = true
+        root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
-        let imageView = NSImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.image = image
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.imageAlignment = .alignCenter
-        root.addSubview(imageView)
+        canvas.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(canvas)
 
-        let copy = NSButton(title: "Copy", target: self, action: #selector(copyImage))
-        let save = NSButton(title: "Save…", target: self, action: #selector(saveImage))
-        let close = NSButton(title: "Close", target: self, action: #selector(closeWindow))
-        close.keyEquivalent = "\u{1b}"
+        toolControl.selectedSegment = 0
+        toolControl.segmentStyle = .texturedRounded
+        toolControl.setAccessibilityLabel("Annotation tool")
+        toolControl.setToolTip("Pencil (P)", forSegment: 0)
+        toolControl.setToolTip("Rectangle (R)", forSegment: 1)
+        toolControl.setToolTip("Arrow (A)", forSegment: 2)
 
-        let controls = NSStackView(views: [copy, save, close])
+        let color = NSPopUpButton()
+        color.addItems(withTitles: AnnotationColor.allCases.map(\.rawValue))
+        color.toolTip = "Color"
+        color.target = self
+        color.action = #selector(changeColor(_:))
+
+        let thickness = NSPopUpButton()
+        thickness.addItems(withTitles: AnnotationThickness.allCases.map(\.rawValue))
+        thickness.selectItem(withTitle: model.thickness.rawValue)
+        thickness.toolTip = "Line thickness"
+        thickness.target = self
+        thickness.action = #selector(changeThickness(_:))
+
+        let save = NSButton(title: "Save", target: self, action: #selector(save))
+        save.toolTip = "Save (S)"
+
+        let controls = NSStackView(views: [
+            toolControl, color, thickness, NSView(), save,
+        ])
         controls.translatesAutoresizingMaskIntoConstraints = false
         controls.orientation = .horizontal
         controls.spacing = 8
         controls.alignment = .centerY
-        root.addSubview(controls)
+        controls.setHuggingPriority(.defaultLow, for: .horizontal)
+
+        let toolbar = NSVisualEffectView()
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.material = .headerView
+        toolbar.blendingMode = .withinWindow
+        toolbar.state = .active
+        toolbar.addSubview(controls)
+        root.addSubview(toolbar)
 
         NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: root.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: controls.topAnchor, constant: -8),
+            canvas.topAnchor.constraint(equalTo: root.topAnchor),
+            canvas.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            canvas.bottomAnchor.constraint(equalTo: toolbar.topAnchor),
 
-            controls.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            controls.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
+            toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: 52),
+
+            controls.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 12),
+            controls.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -12),
+            controls.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
             controls.heightAnchor.constraint(equalToConstant: 32),
         ])
-
         view = root
     }
 
-    @objc private func copyImage() {
-        onCopy()
+    func flattenedImage() -> NSImage? {
+        AnnotationRenderer.flattenedImage(
+            source: model.sourceImage,
+            annotations: model.annotations
+        )
     }
 
-    @objc private func saveImage() {
-        onSave()
+    func finish() {
+        onFinish?()
     }
 
-    @objc private func closeWindow() {
-        onClose()
+    @objc func undo() {
+        if model.undo() {
+            canvas.needsDisplay = true
+        }
+    }
+
+    @objc func save() {
+        onSave?()
+    }
+
+    func selectTool(_ tool: AnnotationTool) {
+        model.tool = tool
+        if let index = AnnotationTool.allCases.firstIndex(of: tool) {
+            toolControl.selectedSegment = index
+        }
+    }
+
+    @objc private func changeTool(_ sender: NSSegmentedControl) {
+        let tools = AnnotationTool.allCases
+        guard tools.indices.contains(sender.selectedSegment) else { return }
+        selectTool(tools[sender.selectedSegment])
+    }
+
+    @objc private func changeColor(_ sender: NSPopUpButton) {
+        model.color = AnnotationColor(rawValue: sender.titleOfSelectedItem ?? "") ?? .red
+    }
+
+    @objc private func changeThickness(_ sender: NSPopUpButton) {
+        model.thickness =
+            AnnotationThickness(rawValue: sender.titleOfSelectedItem ?? "") ?? .medium
+    }
+}
+
+private final class AnnotationCanvasView: NSView {
+    private let model: AnnotationEditorModel
+    private var draft: AnnotationShape?
+
+    init(model: AnnotationEditorModel) {
+        self.model = model
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
+        let imageRect = AnnotationRenderer.aspectFitRect(
+            imageSize: model.sourceImage.size,
+            in: bounds
+        )
+        model.sourceImage.draw(
+            in: imageRect,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        var annotations = model.annotations
+        if let draft {
+            annotations.append(
+                Annotation(
+                    shape: draft,
+                    style: AnnotationStyle(color: model.color, thickness: model.thickness)
+                )
+            )
+        }
+        AnnotationRenderer.draw(
+            annotations: annotations,
+            in: context,
+            imageSize: model.sourceImage.size,
+            destinationRect: imageRect
+        )
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let point = imagePoint(for: event) else { return }
+        switch model.tool {
+        case .pencil: draft = .pencil([point])
+        case .rectangle: draft = .rectangle(start: point, end: point)
+        case .arrow: draft = .arrow(start: point, end: point)
+        }
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let point = imagePoint(for: event, clamped: true) else { return }
+        updateDraft(with: point)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if let point = imagePoint(for: event, clamped: true) {
+            updateDraft(with: point)
+        }
+        guard let draft else { return }
+        model.commit(draft)
+        self.draft = nil
+        needsDisplay = true
+    }
+
+    private func updateDraft(with point: CGPoint) {
+        guard let draft else { return }
+        switch draft {
+        case var .pencil(points):
+            if points.last != point {
+                points.append(point)
+            }
+            self.draft = .pencil(points)
+        case let .rectangle(start, _):
+            self.draft = .rectangle(start: start, end: point)
+        case let .arrow(start, _):
+            self.draft = .arrow(start: start, end: point)
+        }
+        needsDisplay = true
+    }
+
+    private func imagePoint(for event: NSEvent, clamped: Bool = false) -> CGPoint? {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let imageRect = AnnotationRenderer.aspectFitRect(
+            imageSize: model.sourceImage.size,
+            in: bounds
+        )
+        if clamped {
+            return AnnotationRenderer.clampedImagePoint(
+                from: viewPoint,
+                imageRect: imageRect,
+                imageSize: model.sourceImage.size
+            )
+        }
+        return AnnotationRenderer.imagePoint(
+            from: viewPoint,
+            imageRect: imageRect,
+            imageSize: model.sourceImage.size
+        )
     }
 }

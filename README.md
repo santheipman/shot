@@ -5,9 +5,22 @@ predictably with the AeroSpace window manager. Its window lifecycle is kept
 independent of AeroSpace APIs so the same behavior works with other macOS
 window managers.
 
-Press **Control–Shift–4**, drag an area, and AeroShot opens the captured image
-in a floating panel in the currently focused AeroSpace workspace. The menu-bar
-item also has a **Capture Area** command.
+Press **Command–Shift–3** to capture the display containing the pointer, or
+**Command–Shift–4** and drag an area. AeroShot opens the captured image
+in a floating annotation editor in the currently focused AeroSpace workspace.
+Draw with Pencil, Rectangle, or Arrow, and choose from six colors and three
+line thicknesses. **Command–Z** undoes the last annotation. Press **Escape** to
+copy the flattened image to the clipboard and close the editor. **Save** writes
+a timestamped PNG directly to `~/Documents/screenshot` and keeps the editor
+open. In the editor, press **P** for Pencil, **R** for Rectangle, **A** for
+Arrow, or **S** to save. Closing with the window control does not copy. The
+menu-bar item also has matching capture commands.
+
+Press **Command–Shift–2** and drag an area to pin it. Each pin is an independent,
+borderless image card that floats above normal windows and follows you between
+workspaces. Drag a pin to move it, resize it from an edge or corner, or hover
+over it to reveal its close button. Pins preserve the image aspect ratio and do
+not edit, save, or copy the image.
 
 ## Rules that must not change
 
@@ -18,12 +31,14 @@ different workspace. Preserve these rules when adding features:
 - Each panel owns the image from its corresponding capture.
 - AeroShot never reuses, restores, moves, or explicitly activates an existing
   editor.
-- Presenting a new editor does not force application-wide activation.
+- A newly presented editor becomes the active key window without raising an
+  older editor from another workspace.
 - Closing a panel destroys that panel and its controller.
 - Multiple captures can have independent panels in different workspaces.
 - The panel floats through AppKit. AeroSpace needs no app-specific rule.
-- Do not add `canJoinAllSpaces` to editor panels. The selection overlays use it
-  only because they must cover every display during selection.
+- Do not add `canJoinAllSpaces` to editor panels. Pin panels intentionally use
+  it so they follow the user between workspaces. The selection overlays use it
+  because they must cover every display during selection.
 
 The important editor settings are in
 `Sources/AeroShot/PreviewWindowController.swift`:
@@ -48,14 +63,16 @@ manager. The lifecycle rules above are the part AeroShot controls and tests.
 
 - Area selection on one or more displays
 - Native screen capture at the selected coordinates
-- A new floating preview for every capture
-- Copy image to the clipboard
-- Save as PNG
-- Close with the button or Escape
+- A new floating annotation editor for every capture
+- Multiple movable and resizable image pins that follow between workspaces
+- Pencil, rectangle, and arrow annotations
+- Red, yellow, green, blue, black, and white annotation colors
+- Thin, medium, and thick annotation strokes
+- Undo the most recent annotation with Command–Z
+- Select Pencil with P, Rectangle with R, or Arrow with A
+- Copy and close with Escape
+- Save with S or the Save button without closing
 - Menu-bar app with no Dock icon
-
-There are no annotation tools yet. The next feature work can turn the preview
-into an editor, but it should keep the window lifecycle above.
 
 ## Project map
 
@@ -67,8 +84,13 @@ into an editor, but it should keep the window lifecycle above.
 - `Sources/AeroShot/CaptureCoordinator.swift` — capture and editor lifecycle
 - `Sources/AeroShot/EditorWindow.swift` — editor lifecycle boundary used by
   production windows and tests
-- `Sources/AeroShot/PreviewWindowController.swift` — floating preview UI,
-  copy, save, and close
+- `Sources/AeroShot/PinWindow.swift` — pin lifecycle boundary used by
+  production windows and tests
+- `Sources/AeroShot/PinWindowController.swift` — borderless floating pin UI
+- `Sources/AeroShot/AnnotationEditor.swift` — annotation model, geometry, and
+  native-resolution export rendering
+- `Sources/AeroShot/PreviewWindowController.swift` — floating editor UI,
+  Escape-to-copy, direct save, and close lifecycle
 - `Sources/AeroShot/EventLog.swift` — optional lifecycle diagnostics
 - `Sources/AeroShot/ImageDiagnostics.swift` — black-image detection used only
   when file logging is enabled
@@ -153,20 +175,12 @@ The exact workspace placement remains a short manual AeroSpace smoke test:
    workspace.
 4. Switch between the workspaces and confirm both editors remain independent.
 
-## Adding editor features
+## Editor architecture
 
-Keep the captured source image owned by one editor window. A useful next split
-is:
+Each editor owns its captured source image, ordered annotations, and canvas.
+The canvas maps pointer input into source-image coordinates, so annotations
+remain aligned when the panel is resized. Clipboard and PNG exports flatten at
+the source image's backing-pixel resolution.
 
-- an editor model containing the source image and ordered edits;
-- a canvas view that renders the source plus edits;
-- tools that add or change edits without knowing about AeroSpace;
-- export code that renders the final image for Copy and Save.
-
-Start with one tool and keep Copy and Save working after every step. Add
-automated tests for edit rendering separately from the window lifecycle tests.
-Then run the manual AeroSpace smoke test for changes that affect window
-presentation.
-
-Do not solve editing by introducing a shared singleton editor, reopening a
-closed window, or activating an editor from a previous workspace.
+Keep this state per editor. Do not introduce a shared singleton editor, reopen
+a closed window, or activate an editor from a previous workspace.

@@ -1,7 +1,8 @@
 import AppKit
 
-enum ScreenCaptureError: LocalizedError {
+enum ScreenCaptureError: LocalizedError, Equatable {
     case invalidRectangle
+    case displayNotFound
     case permissionRequired
     case captureFailed
 
@@ -9,6 +10,8 @@ enum ScreenCaptureError: LocalizedError {
         switch self {
         case .invalidRectangle:
             return "The selected area is empty."
+        case .displayNotFound:
+            return "AeroShot couldn’t find the display containing the pointer."
         case .permissionRequired:
             return "Allow AeroShot in System Settings → Privacy & Security → Screen & System Audio Recording, then relaunch it."
         case .captureFailed:

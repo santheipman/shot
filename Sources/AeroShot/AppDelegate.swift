@@ -4,18 +4,36 @@ import Carbon
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let captureCoordinator = CaptureCoordinator()
     private var statusItem: NSStatusItem?
-    private var hotKey: GlobalHotKey?
+    private var hotKeys: GlobalHotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
         configureStatusItem()
 
-        hotKey = GlobalHotKey(
-            keyCode: UInt32(kVK_ANSI_4),
-            modifiers: UInt32(controlKey | shiftKey)
-        ) { [weak self] in
-            self?.captureCoordinator.beginAreaSelection()
-        }
+        let modifiers = UInt32(cmdKey | shiftKey)
+        hotKeys = GlobalHotKey(shortcuts: [
+            .init(
+                name: "command-shift-3",
+                keyCode: UInt32(kVK_ANSI_3),
+                modifiers: modifiers
+            ) { [weak self] in
+                self?.captureCoordinator.captureFullscreen()
+            },
+            .init(
+                name: "command-shift-4",
+                keyCode: UInt32(kVK_ANSI_4),
+                modifiers: modifiers
+            ) { [weak self] in
+                self?.captureCoordinator.beginAreaSelection()
+            },
+            .init(
+                name: "command-shift-2",
+                keyCode: UInt32(kVK_ANSI_2),
+                modifiers: modifiers
+            ) { [weak self] in
+                self?.captureCoordinator.beginPinAreaSelection()
+            },
+        ])
 
         EventLog.shared.write("app_started pid=\(ProcessInfo.processInfo.processIdentifier)")
         EventLog.shared.write(
@@ -37,22 +55,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        let captureItem = NSMenuItem(
+        addCaptureMenuItem(
+            to: menu,
+            title: "Capture Full Screen",
+            action: #selector(captureFullscreen),
+            key: "3"
+        )
+        addCaptureMenuItem(
+            to: menu,
             title: "Capture Area",
             action: #selector(captureArea),
-            keyEquivalent: ""
+            key: "4"
         )
-        captureItem.target = self
-        menu.addItem(captureItem)
-        menu.addItem(NSMenuItem.separator())
-
-        let shortcutItem = NSMenuItem(
-            title: "Shortcut: Control–Shift–4",
-            action: nil,
-            keyEquivalent: ""
+        addCaptureMenuItem(
+            to: menu,
+            title: "Pin Area",
+            action: #selector(capturePinnedArea),
+            key: "2"
         )
-        shortcutItem.isEnabled = false
-        menu.addItem(shortcutItem)
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
@@ -67,8 +87,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
+    private func addCaptureMenuItem(
+        to menu: NSMenu,
+        title: String,
+        action: Selector,
+        key: String
+    ) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = [.command, .shift]
+        item.target = self
+        menu.addItem(item)
+    }
+
+    @objc private func captureFullscreen() {
+        captureCoordinator.captureFullscreen()
+    }
+
     @objc private func captureArea() {
         captureCoordinator.beginAreaSelection()
+    }
+
+    @objc private func capturePinnedArea() {
+        captureCoordinator.beginPinAreaSelection()
     }
 
     @objc private func quit() {

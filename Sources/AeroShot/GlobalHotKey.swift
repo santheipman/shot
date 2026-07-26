@@ -1,13 +1,25 @@
 import Carbon
 
 final class GlobalHotKey {
-    private var hotKeyRef: EventHotKeyRef?
+    struct Shortcut {
+        let name: String
+        let keyCode: UInt32
+        let modifiers: UInt32
+        let handler: () -> Void
+    }
+
+    private static let signature = OSType(
+        UInt32(ascii: "A") << 24 |
+            UInt32(ascii: "E") << 16 |
+            UInt32(ascii: "R") << 8 |
+            UInt32(ascii: "O")
+    )
+
+    private var hotKeyRefs: [EventHotKeyRef] = []
     private var eventHandlerRef: EventHandlerRef?
-    private let handler: () -> Void
+    private var handlers: [UInt32: () -> Void] = [:]
 
-    init?(keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) {
-        self.handler = handler
-
+    init(shortcuts: [Shortcut]) {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -16,7 +28,9 @@ final class GlobalHotKey {
         let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             { _, event, userData in
-                guard let event, let userData else { return noErr }
+                guard let event, let userData else {
+                    return OSStatus(eventNotHandledErr)
+                }
 
                 var hotKeyID = EventHotKeyID()
                 let status = GetEventParameter(
@@ -29,11 +43,19 @@ final class GlobalHotKey {
                     &hotKeyID
                 )
 
-                guard status == noErr, hotKeyID.id == 1 else { return status }
-                let owner = Unmanaged<GlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
-                DispatchQueue.main.async {
-                    owner.handler()
+                guard
+                    status == noErr,
+                    hotKeyID.signature == GlobalHotKey.signature
+                else {
+                    return OSStatus(eventNotHandledErr)
                 }
+
+                let owner = Unmanaged<GlobalHotKey>.fromOpaque(userData).takeUnretainedValue()
+                guard let handler = owner.handlers[hotKeyID.id] else {
+                    return OSStatus(eventNotHandledErr)
+                }
+
+                DispatchQueue.main.async(execute: handler)
                 return noErr
             },
             1,
@@ -43,44 +65,46 @@ final class GlobalHotKey {
         )
 
         guard installStatus == noErr else {
-            EventLog.shared.write("hotkey_install_failed status=\(installStatus)")
-            return nil
+            EventLog.shared.write("hotkey_handler_install_failed status=\(installStatus)")
+            return
         }
 
-        let signature = OSType(
-            UInt32(ascii: "A") << 24 |
-                UInt32(ascii: "E") << 16 |
-                UInt32(ascii: "R") << 8 |
-                UInt32(ascii: "O")
-        )
-        let hotKeyID = EventHotKeyID(signature: signature, id: 1)
-        let registerStatus = RegisterEventHotKey(
-            keyCode,
-            modifiers,
+        for (index, shortcut) in shortcuts.enumerated() {
+            register(shortcut, id: UInt32(index + 1))
+        }
+    }
+
+    deinit {
+        for hotKeyRef in hotKeyRefs {
+            UnregisterEventHotKey(hotKeyRef)
+        }
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+        }
+    }
+
+    private func register(_ shortcut: Shortcut, id: UInt32) {
+        var hotKeyRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
+        let status = RegisterEventHotKey(
+            shortcut.keyCode,
+            shortcut.modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
             &hotKeyRef
         )
 
-        guard registerStatus == noErr else {
-            EventLog.shared.write("hotkey_register_failed status=\(registerStatus)")
-            if let eventHandlerRef {
-                RemoveEventHandler(eventHandlerRef)
-            }
-            return nil
+        guard status == noErr, let hotKeyRef else {
+            EventLog.shared.write(
+                "hotkey_register_failed name=\(shortcut.name) status=\(status)"
+            )
+            return
         }
 
-        EventLog.shared.write("hotkey_registered control-shift-4")
-    }
-
-    deinit {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-        }
-        if let eventHandlerRef {
-            RemoveEventHandler(eventHandlerRef)
-        }
+        hotKeyRefs.append(hotKeyRef)
+        handlers[id] = shortcut.handler
+        EventLog.shared.write("hotkey_registered name=\(shortcut.name)")
     }
 }
 
