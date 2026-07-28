@@ -247,10 +247,35 @@ struct AnnotationEditorTests {
             flattened.representations.compactMap { $0 as? NSBitmapImageRep }.first
         )
 
-        // NSBitmapImageRep indexes from the bottom, so a canvas stroke near
-        // the top must appear at the high-y side of the exported bitmap.
-        #expect(result.colorAt(x: 20, y: 35)?.redComponent ?? 1 < 0.2)
-        #expect(result.colorAt(x: 20, y: 4)?.redComponent ?? 0 > 0.8)
+        #expect(result.colorAt(x: 20, y: 4)?.redComponent ?? 1 < 0.2)
+        #expect(result.colorAt(x: 20, y: 35)?.redComponent ?? 0 > 0.8)
+    }
+
+    @Test
+    func clipboardEncodingKeepsRectangleAtItsCanvasPosition() throws {
+        let source = testImage(
+            points: CGSize(width: 100, height: 100),
+            pixels: CGSize(width: 200, height: 200)
+        )
+        let annotation = Annotation(
+            shape: .rectangle(
+                start: CGPoint(x: 20, y: 60),
+                end: CGPoint(x: 80, y: 80)
+            ),
+            style: AnnotationStyle(color: .red, thickness: .medium)
+        )
+        let flattened = try #require(
+            AnnotationRenderer.flattenedImage(source: source, annotations: [annotation])
+        )
+        let tiff = try #require(flattened.tiffRepresentation)
+        let clipboardImage = try #require(NSBitmapImageRep(data: tiff))
+
+        let expectedStroke = try #require(clipboardImage.colorAt(x: 40, y: 140))
+        let mirroredPosition = try #require(clipboardImage.colorAt(x: 40, y: 80))
+        #expect(expectedStroke.redComponent > 0.8)
+        #expect(expectedStroke.greenComponent < 0.5)
+        #expect(expectedStroke.alphaComponent > 0.8)
+        #expect(mirroredPosition.alphaComponent < 0.2)
     }
 
     @Test
@@ -296,8 +321,9 @@ struct AnnotationEditorTests {
         }
 
         #expect(darkPixelCount > 100)
-        #expect(darkMinY >= 30)
-        #expect(darkMaxY >= 55)
+        #expect(darkMinY >= 8)
+        #expect(darkMinY < 30)
+        #expect(darkMaxY < 50)
     }
 
     private func testImage(

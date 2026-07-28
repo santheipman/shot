@@ -236,8 +236,11 @@ enum AnnotationRenderer {
         guard let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = graphics
-        // Draw in source points. NSGraphicsContext applies the bitmap's backing
-        // scale, mapping annotations to native pixels exactly once.
+        // The editor canvas is flipped and stores points from the image's
+        // top-left. Bitmap contexts use a bottom-left origin, so match the
+        // canvas before drawing the annotations.
+        graphics.cgContext.translateBy(x: 0, y: source.size.height)
+        graphics.cgContext.scaleBy(x: 1, y: -1)
         draw(
             annotations: annotations,
             in: graphics.cgContext,
