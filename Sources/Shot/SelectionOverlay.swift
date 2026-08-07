@@ -2,8 +2,9 @@ import AppKit
 import Carbon
 
 enum SelectionResult {
-    case selected(CGRect)
+    case selected(CGRect, NSImage)
     case cancelled
+    case failed(Error)
 }
 
 final class SelectionOverlayController {
@@ -15,9 +16,21 @@ final class SelectionOverlayController {
     func begin(completion: @escaping (SelectionResult) -> Void) {
         self.completion = completion
 
-        for screen in NSScreen.screens {
-            let window = SelectionWindow(screen: screen) { [weak self] rect in
-                self?.finish(.selected(rect))
+        let screens = NSScreen.screens
+        let snapshots: [ScreenSnapshot]
+        do {
+            snapshots = try screens.map(ScreenCapture.snapshot)
+        } catch {
+            finish(.failed(error))
+            return
+        }
+
+        for (screen, snapshot) in zip(screens, snapshots) {
+            let window = SelectionWindow(
+                screen: screen,
+                snapshot: snapshot
+            ) { [weak self] rect, image in
+                self?.finish(.selected(rect, image))
             }
             windows.append(window)
             window.orderFrontRegardless()
@@ -54,8 +67,16 @@ final class SelectionOverlayController {
 }
 
 final class SelectionWindow: NSWindow {
-    init(screen: NSScreen, onSelection: @escaping (CGRect) -> Void) {
-        let view = SelectionView(screen: screen, onSelection: onSelection)
+    init(
+        screen: NSScreen,
+        snapshot: ScreenSnapshot,
+        onSelection: @escaping (CGRect, NSImage) -> Void
+    ) {
+        let view = SelectionView(
+            screen: screen,
+            snapshot: snapshot,
+            onSelection: onSelection
+        )
         super.init(
             contentRect: screen.frame,
             styleMask: .borderless,
@@ -77,16 +98,21 @@ final class SelectionWindow: NSWindow {
 
 final class SelectionView: NSView {
     private let targetScreen: NSScreen
-    private let onSelection: (CGRect) -> Void
+    private let snapshot: ScreenSnapshot
+    private let onSelection: (CGRect, NSImage) -> Void
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
 
-    init(screen: NSScreen, onSelection: @escaping (CGRect) -> Void) {
+    init(
+        screen: NSScreen,
+        snapshot: ScreenSnapshot,
+        onSelection: @escaping (CGRect, NSImage) -> Void
+    ) {
         targetScreen = screen
+        self.snapshot = snapshot
         self.onSelection = onSelection
         super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.18).cgColor
     }
 
     required init?(coder: NSCoder) {
@@ -125,11 +151,18 @@ final class SelectionView: NSView {
             return
         }
 
-        onSelection(quartzRect(for: localRect))
+        let rect = quartzRect(for: localRect)
+        guard let image = snapshot.crop(to: rect) else { return }
+        onSelection(rect, image)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+
+        snapshot.image.draw(in: bounds)
+        NSColor.black.withAlphaComponent(0.18).setFill()
+        bounds.fill()
+
         guard let dragStart, let dragCurrent else { return }
 
         let selection = CGRect(
@@ -139,8 +172,11 @@ final class SelectionView: NSView {
             height: abs(dragCurrent.y - dragStart.y)
         )
 
-        NSColor.clear.setFill()
-        selection.fill(using: .copy)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: selection).addClip()
+        snapshot.image.draw(in: bounds)
+        NSGraphicsContext.restoreGraphicsState()
+
         NSColor.white.setStroke()
         let border = NSBezierPath(rect: selection.insetBy(dx: 0.5, dy: 0.5))
         border.lineWidth = 1

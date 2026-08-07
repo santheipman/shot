@@ -1,2 +1,3 @@
 - write simple code / simple solution. dont overenginner.
 - we and this machine is the only user of this app for now.
+- after making an app change, rebuild and restart Shot by default with `./scripts/rebuild-and-restart.sh`.

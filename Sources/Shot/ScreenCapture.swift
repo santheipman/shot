@@ -21,6 +21,35 @@ enum ScreenCaptureError: LocalizedError, Equatable {
 }
 
 enum ScreenCapture {
+    static func snapshot(of screen: NSScreen) throws -> ScreenSnapshot {
+        guard CGPreflightScreenCaptureAccess() else {
+            _ = CGRequestScreenCaptureAccess()
+            throw ScreenCaptureError.permissionRequired
+        }
+
+        guard
+            let screenNumber = screen.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")
+            ] as? NSNumber
+        else {
+            throw ScreenCaptureError.displayNotFound
+        }
+
+        let displayBounds = CGDisplayBounds(
+            CGDirectDisplayID(screenNumber.uint32Value)
+        ).integral
+        guard let cgImage = CGWindowListCreateImage(
+            displayBounds,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution, .boundsIgnoreFraming]
+        ) else {
+            throw ScreenCaptureError.captureFailed
+        }
+
+        return ScreenSnapshot(displayBounds: displayBounds, cgImage: cgImage)
+    }
+
     static func capture(
         rect: CGRect,
         completion: @escaping (Result<NSImage, Error>) -> Void
@@ -61,5 +90,35 @@ enum ScreenCapture {
                 completion(.success(image))
             }
         }
+    }
+}
+
+struct ScreenSnapshot {
+    let displayBounds: CGRect
+    let cgImage: CGImage
+
+    var image: NSImage {
+        NSImage(cgImage: cgImage, size: displayBounds.size)
+    }
+
+    func crop(to rect: CGRect) -> NSImage? {
+        let clippedRect = rect.intersection(displayBounds).integral
+        guard clippedRect.width >= 2, clippedRect.height >= 2 else {
+            return nil
+        }
+
+        let scaleX = CGFloat(cgImage.width) / displayBounds.width
+        let scaleY = CGFloat(cgImage.height) / displayBounds.height
+        let pixelRect = CGRect(
+            x: (clippedRect.minX - displayBounds.minX) * scaleX,
+            y: (clippedRect.minY - displayBounds.minY) * scaleY,
+            width: clippedRect.width * scaleX,
+            height: clippedRect.height * scaleY
+        ).integral
+
+        guard let croppedImage = cgImage.cropping(to: pixelRect) else {
+            return nil
+        }
+        return NSImage(cgImage: croppedImage, size: clippedRect.size)
     }
 }

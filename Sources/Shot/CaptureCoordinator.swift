@@ -58,9 +58,12 @@ final class CaptureCoordinator {
             switch result {
             case .cancelled:
                 EventLog.shared.write("selection_cancelled")
-            case let .selected(rect):
+            case let .selected(rect, image):
                 EventLog.shared.write("selection_completed rect=\(rect.debugDescription)")
-                self.capture(rect: rect)
+                self.presentEditor(image: image, near: rect)
+            case let .failed(error):
+                EventLog.shared.write("selection_failed error=\(error.localizedDescription)")
+                self.handleCaptureError(error)
             }
         }
     }
@@ -79,9 +82,12 @@ final class CaptureCoordinator {
             switch result {
             case .cancelled:
                 EventLog.shared.write("pin_selection_cancelled")
-            case let .selected(rect):
+            case let .selected(rect, image):
                 EventLog.shared.write("pin_selection_completed rect=\(rect.debugDescription)")
-                self.capturePin(rect: rect)
+                self.presentPin(image: image, near: rect)
+            case let .failed(error):
+                EventLog.shared.write("pin_selection_failed error=\(error.localizedDescription)")
+                self.handleCaptureError(error)
             }
         }
     }

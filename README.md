@@ -11,6 +11,9 @@ icon and requires macOS 13 or newer.
 - **Command–Shift–2** captures an area as a floating pin that follows you
   between workspaces.
 
+Area capture freezes the screen before showing the selector, so hover menus,
+tooltips, and other temporary UI remain visible while you drag over them.
+
 The editor supports Pencil (**P**), Rectangle (**R**), Arrow (**A**), Text
 (**T**), and undo (**Command–Z**). **Escape** commits active text; otherwise it
 copies the image and closes the editor. **S** or **Save** writes a PNG to
