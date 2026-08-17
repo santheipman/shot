@@ -44,10 +44,14 @@ final class OCRResultWindowController: NSWindowController, NSWindowDelegate, OCR
 
         super.init(window: panel)
         panel.delegate = self
-        panel.contentViewController = OCRResultViewController(
+        let resultViewController = OCRResultViewController(
             image: image,
             recognizeText: recognizeText
         )
+        panel.onCopySelection = { [weak resultViewController] in
+            resultViewController?.copySelection() ?? false
+        }
+        panel.contentViewController = resultViewController
         sizeAndPosition(panel: panel, captureRect: captureRect)
     }
 
@@ -103,12 +107,29 @@ final class OCRResultWindowController: NSWindowController, NSWindowDelegate, OCR
 }
 
 private final class OCRPanel: NSPanel {
+    var onCopySelection: (() -> Bool)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if isCopyShortcut(event), onCopySelection?() == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             close()
             return
         }
+        if isCopyShortcut(event), onCopySelection?() == true {
+            return
+        }
         super.keyDown(with: event)
+    }
+
+    private func isCopyShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return modifiers == .command && event.charactersIgnoringModifiers?.lowercased() == "c"
     }
 }
 
@@ -207,7 +228,7 @@ private final class OCRResultViewController: NSViewController {
                 copyButton.isEnabled = false
                 EventLog.shared.write("ocr_completed text_found=false")
             } else {
-                statusLabel.stringValue = "Edit the recognized text before copying if needed."
+                statusLabel.stringValue = ""
                 copyButton.isEnabled = true
                 EventLog.shared.write("ocr_completed text_found=true")
             }
@@ -216,6 +237,17 @@ private final class OCRResultViewController: NSViewController {
             copyButton.isEnabled = false
             EventLog.shared.write("ocr_failed error=\(error.localizedDescription)")
         }
+    }
+
+    func copySelection() -> Bool {
+        let range = textView.selectedRange()
+        guard range.length > 0 else { return false }
+        let selectedText = (textView.string as NSString).substring(with: range)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        guard pasteboard.setString(selectedText, forType: .string) else { return false }
+        EventLog.shared.write("ocr_selected_text_copied")
+        return true
     }
 
     @objc private func copyText() {
