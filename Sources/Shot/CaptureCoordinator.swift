@@ -9,11 +9,13 @@ final class CaptureCoordinator {
     private let captureScreen: ScreenCaptureFunction
     private let makeEditor: EditorFactory
     private let makePin: PinFactory
+    private let makeOCRResult: OCRResultFactory
     private let handleCaptureError: (Error) -> Void
     private let fullscreenRect: () -> CGRect?
     private var overlayController: SelectionOverlayController?
     private var editors: [Int: any EditorWindow] = [:]
     private var pins: [Int: any PinWindow] = [:]
+    private var ocrResults: [Int: any OCRResultWindow] = [:]
 
     init(
         captureScreen: @escaping ScreenCaptureFunction = ScreenCapture.capture,
@@ -23,12 +25,16 @@ final class CaptureCoordinator {
         makePin: @escaping PinFactory = {
             PinWindowController(image: $0, captureRect: $1)
         },
+        makeOCRResult: @escaping OCRResultFactory = {
+            OCRResultWindowController(image: $0, captureRect: $1)
+        },
         handleCaptureError: ((Error) -> Void)? = nil,
         fullscreenRect: @escaping () -> CGRect? = CaptureCoordinator.displayBoundsContainingMouse
     ) {
         self.captureScreen = captureScreen
         self.makeEditor = makeEditor
         self.makePin = makePin
+        self.makeOCRResult = makeOCRResult
         self.handleCaptureError = handleCaptureError ?? Self.presentCaptureError
         self.fullscreenRect = fullscreenRect
     }
@@ -87,6 +93,30 @@ final class CaptureCoordinator {
                 self.presentPin(image: image, near: rect)
             case let .failed(error):
                 EventLog.shared.write("pin_selection_failed error=\(error.localizedDescription)")
+                self.handleCaptureError(error)
+            }
+        }
+    }
+
+    func beginTextAreaSelection() {
+        guard overlayController == nil else { return }
+
+        EventLog.shared.write("ocr_selection_started")
+        let controller = SelectionOverlayController()
+        overlayController = controller
+
+        controller.begin { [weak self] result in
+            guard let self else { return }
+            self.overlayController = nil
+
+            switch result {
+            case .cancelled:
+                EventLog.shared.write("ocr_selection_cancelled")
+            case let .selected(rect, image):
+                EventLog.shared.write("ocr_selection_completed rect=\(rect.debugDescription)")
+                self.presentOCRResult(image: image, near: rect)
+            case let .failed(error):
+                EventLog.shared.write("ocr_selection_failed error=\(error.localizedDescription)")
                 self.handleCaptureError(error)
             }
         }
@@ -167,6 +197,23 @@ final class CaptureCoordinator {
         pins[windowNumber] = pin
         EventLog.shared.write(
             "pin_created window_id=\(windowNumber) live_pins=\(pins.count)"
+        )
+    }
+
+    func presentOCRResult(image: NSImage, near captureRect: CGRect) {
+        let result = makeOCRResult(image, captureRect)
+        result.onClose = { [weak self] windowNumber in
+            self?.ocrResults.removeValue(forKey: windowNumber)
+            EventLog.shared.write(
+                "ocr_window_destroyed window_id=\(windowNumber) remaining=\(self?.ocrResults.count ?? 0)"
+            )
+        }
+
+        result.present()
+        guard let windowNumber = result.identifier else { return }
+        ocrResults[windowNumber] = result
+        EventLog.shared.write(
+            "ocr_window_created window_id=\(windowNumber) live_windows=\(ocrResults.count)"
         )
     }
 

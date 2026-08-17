@@ -13,6 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let modifiers = UInt32(cmdKey | shiftKey)
         hotKeys = GlobalHotKey(shortcuts: [
             .init(
+                name: "command-shift-1",
+                keyCode: UInt32(kVK_ANSI_1),
+                modifiers: modifiers
+            ) { [weak self] in
+                self?.captureCoordinator.beginTextAreaSelection()
+            },
+            .init(
                 name: "command-shift-3",
                 keyCode: UInt32(kVK_ANSI_3),
                 modifiers: modifiers
@@ -55,6 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        addCaptureMenuItem(
+            to: menu,
+            title: "Capture Text Area",
+            action: #selector(captureTextArea),
+            key: "1"
+        )
         addCaptureMenuItem(
             to: menu,
             title: "Capture Full Screen",
@@ -101,6 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureFullscreen() {
         captureCoordinator.captureFullscreen()
+    }
+
+    @objc private func captureTextArea() {
+        captureCoordinator.beginTextAreaSelection()
     }
 
     @objc private func captureArea() {

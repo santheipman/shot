@@ -187,6 +187,41 @@ struct CaptureCoordinatorTests {
         #expect(reportedError as? TestError == expectedError)
     }
 
+    @Test
+    func textCaptureResultCreatesASeparateWindow() {
+        let image = NSImage(size: NSSize(width: 40, height: 20))
+        let editorFactory = FakeEditorFactory()
+        let resultFactory = FakeOCRResultFactory()
+        let rect = CGRect(x: 10, y: 20, width: 40, height: 20)
+        let coordinator = CaptureCoordinator(
+            makeEditor: editorFactory.makeEditor,
+            makeOCRResult: resultFactory.makeResult
+        )
+
+        coordinator.presentOCRResult(image: image, near: rect)
+
+        #expect(editorFactory.editors.isEmpty)
+        #expect(resultFactory.results.count == 1)
+        #expect(resultFactory.results[0].presentCallCount == 1)
+        #expect(resultFactory.images[0] === image)
+        #expect(resultFactory.captureRects == [rect])
+    }
+
+    @Test
+    func textCaptureResultWindowsCloseIndependently() {
+        let resultFactory = FakeOCRResultFactory()
+        let coordinator = CaptureCoordinator(makeOCRResult: resultFactory.makeResult)
+
+        coordinator.presentOCRResult(image: NSImage(size: NSSize(width: 10, height: 10)), near: .zero)
+        coordinator.presentOCRResult(image: NSImage(size: NSSize(width: 10, height: 10)), near: .zero)
+        resultFactory.results[0].close()
+
+        #expect(resultFactory.results.count == 2)
+        #expect(resultFactory.results[0].closeCallCount == 1)
+        #expect(resultFactory.results[1].closeCallCount == 0)
+        #expect(resultFactory.results[1].presentCallCount == 1)
+    }
+
     private func makeCoordinator(
         image: NSImage = NSImage(size: NSSize(width: 10, height: 10)),
         factory: FakeEditorFactory
@@ -255,6 +290,43 @@ private final class FakePinFactory {
 }
 
 private final class FakePinWindow: PinWindow {
+    let identifier: Int?
+    var onClose: ((Int) -> Void)?
+    private(set) var presentCallCount = 0
+    private(set) var closeCallCount = 0
+
+    init(identifier: Int) {
+        self.identifier = identifier
+    }
+
+    func present() {
+        presentCallCount += 1
+    }
+
+    func close() {
+        guard closeCallCount == 0, let identifier else { return }
+        closeCallCount += 1
+        onClose?(identifier)
+    }
+}
+
+private final class FakeOCRResultFactory {
+    private var nextIdentifier = 200
+    private(set) var results: [FakeOCRResultWindow] = []
+    private(set) var images: [NSImage] = []
+    private(set) var captureRects: [CGRect] = []
+
+    func makeResult(image: NSImage, captureRect: CGRect) -> any OCRResultWindow {
+        let result = FakeOCRResultWindow(identifier: nextIdentifier)
+        nextIdentifier += 1
+        results.append(result)
+        images.append(image)
+        captureRects.append(captureRect)
+        return result
+    }
+}
+
+private final class FakeOCRResultWindow: OCRResultWindow {
     let identifier: Int?
     var onClose: ((Int) -> Void)?
     private(set) var presentCallCount = 0

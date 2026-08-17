@@ -6,6 +6,9 @@ icon and requires macOS 13 or newer.
 
 ## Use
 
+- **Command–Shift–1** captures an area, recognizes its text, and opens an OCR
+  result window. Edit the text if needed, then use **Copy Text** to copy it.
+  Closing the OCR window does not change the clipboard.
 - **Command–Shift–3** captures the display containing the pointer.
 - **Command–Shift–4** captures a selected area.
 - **Command–Shift–2** captures an area as a floating pin that follows you
