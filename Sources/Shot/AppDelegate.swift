@@ -2,9 +2,12 @@ import AppKit
 import Carbon
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let shortcutSetupCompletedKey = "shortcutSetupCompleted"
+
     private let captureCoordinator = CaptureCoordinator()
     private var statusItem: NSStatusItem?
     private var hotKeys: GlobalHotKey?
+    private var shortcutSetupWindowController: ShortcutSetupWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -46,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         EventLog.shared.write(
             "screen_capture_permission granted=\(CGPreflightScreenCaptureAccess())"
         )
+
+        if !UserDefaults.standard.bool(forKey: Self.shortcutSetupCompletedKey) {
+            DispatchQueue.main.async { [weak self] in
+                self?.showShortcutSetup()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -88,6 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         menu.addItem(NSMenuItem.separator())
 
+        let shortcutSetupItem = NSMenuItem(
+            title: "Shortcut Setup…",
+            action: #selector(openShortcutSetup),
+            keyEquivalent: ""
+        )
+        shortcutSetupItem.target = self
+        menu.addItem(shortcutSetupItem)
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit Shot",
             action: #selector(quit),
@@ -126,6 +144,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func capturePinnedArea() {
         captureCoordinator.beginPinAreaSelection()
+    }
+
+    @objc private func openShortcutSetup() {
+        showShortcutSetup()
+    }
+
+    private func showShortcutSetup() {
+        if let shortcutSetupWindowController {
+            shortcutSetupWindowController.present()
+            return
+        }
+
+        let controller = ShortcutSetupWindowController()
+        controller.onDone = {
+            UserDefaults.standard.set(true, forKey: Self.shortcutSetupCompletedKey)
+        }
+        controller.onClose = { [weak self, weak controller] in
+            guard self?.shortcutSetupWindowController === controller else { return }
+            self?.shortcutSetupWindowController = nil
+        }
+        shortcutSetupWindowController = controller
+        controller.present()
     }
 
     @objc private func quit() {
