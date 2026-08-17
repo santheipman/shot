@@ -40,4 +40,5 @@ Recording**), then restart it:
 
 ## Contribution
 
-Tell your coding agent what you want to change.
+Clone this repository, tell your coding agent what you want to change, and
+maintain your own version of Shot.
