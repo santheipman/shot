@@ -4,6 +4,45 @@ import Carbon
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let shortcutSetupCompletedKey = "shortcutSetupCompleted"
 
+    private struct CaptureAction {
+        let title: String
+        let key: String
+        let keyCode: UInt32
+        let hotKeyName: String
+        let run: (CaptureCoordinator) -> Void
+    }
+
+    private static let captureActions: [CaptureAction] = [
+        CaptureAction(
+            title: "Capture Text Area",
+            key: "1",
+            keyCode: UInt32(kVK_ANSI_1),
+            hotKeyName: "command-shift-1",
+            run: { $0.beginTextAreaSelection() }
+        ),
+        CaptureAction(
+            title: "Capture Full Screen",
+            key: "3",
+            keyCode: UInt32(kVK_ANSI_3),
+            hotKeyName: "command-shift-3",
+            run: { $0.captureFullscreen() }
+        ),
+        CaptureAction(
+            title: "Capture Area",
+            key: "4",
+            keyCode: UInt32(kVK_ANSI_4),
+            hotKeyName: "command-shift-4",
+            run: { $0.beginAreaSelection() }
+        ),
+        CaptureAction(
+            title: "Pin Area",
+            key: "2",
+            keyCode: UInt32(kVK_ANSI_2),
+            hotKeyName: "command-shift-2",
+            run: { $0.beginPinAreaSelection() }
+        ),
+    ]
+
     private let captureCoordinator = CaptureCoordinator()
     private var statusItem: NSStatusItem?
     private var hotKeys: GlobalHotKey?
@@ -13,37 +52,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = false
         configureStatusItem()
 
-        let modifiers = UInt32(cmdKey | shiftKey)
-        hotKeys = GlobalHotKey(shortcuts: [
+        hotKeys = GlobalHotKey(shortcuts: Self.captureActions.map { action in
             .init(
-                name: "command-shift-1",
-                keyCode: UInt32(kVK_ANSI_1),
-                modifiers: modifiers
+                name: action.hotKeyName,
+                keyCode: action.keyCode,
+                modifiers: UInt32(cmdKey | shiftKey)
             ) { [weak self] in
-                self?.captureCoordinator.beginTextAreaSelection()
-            },
-            .init(
-                name: "command-shift-3",
-                keyCode: UInt32(kVK_ANSI_3),
-                modifiers: modifiers
-            ) { [weak self] in
-                self?.captureCoordinator.captureFullscreen()
-            },
-            .init(
-                name: "command-shift-4",
-                keyCode: UInt32(kVK_ANSI_4),
-                modifiers: modifiers
-            ) { [weak self] in
-                self?.captureCoordinator.beginAreaSelection()
-            },
-            .init(
-                name: "command-shift-2",
-                keyCode: UInt32(kVK_ANSI_2),
-                modifiers: modifiers
-            ) { [weak self] in
-                self?.captureCoordinator.beginPinAreaSelection()
-            },
-        ])
+                guard let self else { return }
+                action.run(self.captureCoordinator)
+            }
+        })
 
         EventLog.shared.write("app_started pid=\(ProcessInfo.processInfo.processIdentifier)")
         EventLog.shared.write(
@@ -71,35 +89,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
-        addCaptureMenuItem(
-            to: menu,
-            title: "Capture Text Area",
-            action: #selector(captureTextArea),
-            key: "1"
-        )
-        addCaptureMenuItem(
-            to: menu,
-            title: "Capture Full Screen",
-            action: #selector(captureFullscreen),
-            key: "3"
-        )
-        addCaptureMenuItem(
-            to: menu,
-            title: "Capture Area",
-            action: #selector(captureArea),
-            key: "4"
-        )
-        addCaptureMenuItem(
-            to: menu,
-            title: "Pin Area",
-            action: #selector(capturePinnedArea),
-            key: "2"
-        )
+        for (index, action) in Self.captureActions.enumerated() {
+            let menuItem = NSMenuItem(
+                title: action.title,
+                action: #selector(runCaptureAction(_:)),
+                keyEquivalent: action.key
+            )
+            menuItem.keyEquivalentModifierMask = [.command, .shift]
+            menuItem.target = self
+            menuItem.tag = index
+            menu.addItem(menuItem)
+        }
         menu.addItem(NSMenuItem.separator())
 
         let shortcutSetupItem = NSMenuItem(
             title: "Shortcut Setup…",
-            action: #selector(openShortcutSetup),
+            action: #selector(showShortcutSetup),
             keyEquivalent: ""
         )
         shortcutSetupItem.target = self
@@ -118,39 +123,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
     }
 
-    private func addCaptureMenuItem(
-        to menu: NSMenu,
-        title: String,
-        action: Selector,
-        key: String
-    ) {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        item.keyEquivalentModifierMask = [.command, .shift]
-        item.target = self
-        menu.addItem(item)
+    @objc private func runCaptureAction(_ sender: NSMenuItem) {
+        guard Self.captureActions.indices.contains(sender.tag) else { return }
+        Self.captureActions[sender.tag].run(captureCoordinator)
     }
 
-    @objc private func captureFullscreen() {
-        captureCoordinator.captureFullscreen()
-    }
-
-    @objc private func captureTextArea() {
-        captureCoordinator.beginTextAreaSelection()
-    }
-
-    @objc private func captureArea() {
-        captureCoordinator.beginAreaSelection()
-    }
-
-    @objc private func capturePinnedArea() {
-        captureCoordinator.beginPinAreaSelection()
-    }
-
-    @objc private func openShortcutSetup() {
-        showShortcutSetup()
-    }
-
-    private func showShortcutSetup() {
+    @objc private func showShortcutSetup() {
         if let shortcutSetupWindowController {
             shortcutSetupWindowController.present()
             return

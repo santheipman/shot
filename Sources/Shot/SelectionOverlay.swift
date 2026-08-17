@@ -1,5 +1,4 @@
 import AppKit
-import Carbon
 
 enum SelectionResult {
     case selected(CGRect, NSImage)
@@ -38,7 +37,7 @@ final class SelectionOverlayController {
 
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
             [weak self] event in
-            if event.keyCode == UInt16(kVK_Escape) {
+            if event.isEscapeKey {
                 self?.finish(.cancelled)
                 return nil
             }
@@ -184,15 +183,11 @@ final class SelectionView: NSView {
     }
 
     private func quartzRect(for localRect: CGRect) -> CGRect {
-        guard
-            let screenNumber = targetScreen.deviceDescription[
-                NSDeviceDescriptionKey("NSScreenNumber")
-            ] as? NSNumber
-        else {
+        guard let displayID = targetScreen.displayID else {
             return localRect
         }
 
-        let displayBounds = CGDisplayBounds(CGDirectDisplayID(screenNumber.uint32Value))
+        let displayBounds = CGDisplayBounds(displayID)
         return CGRect(
             x: displayBounds.minX + localRect.minX,
             y: displayBounds.minY + (bounds.height - localRect.maxY),

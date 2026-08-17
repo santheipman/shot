@@ -27,17 +27,11 @@ enum ScreenCapture {
             throw ScreenCaptureError.permissionRequired
         }
 
-        guard
-            let screenNumber = screen.deviceDescription[
-                NSDeviceDescriptionKey("NSScreenNumber")
-            ] as? NSNumber
-        else {
+        guard let displayID = screen.displayID else {
             throw ScreenCaptureError.displayNotFound
         }
 
-        let displayBounds = CGDisplayBounds(
-            CGDirectDisplayID(screenNumber.uint32Value)
-        ).integral
+        let displayBounds = CGDisplayBounds(displayID).integral
         guard let cgImage = CGWindowListCreateImage(
             displayBounds,
             .optionOnScreenOnly,

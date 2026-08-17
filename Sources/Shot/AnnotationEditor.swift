@@ -184,10 +184,7 @@ enum AnnotationRenderer {
         guard imageRect.contains(viewPoint), imageRect.width > 0, imageRect.height > 0 else {
             return nil
         }
-        return CGPoint(
-            x: (viewPoint.x - imageRect.minX) * imageSize.width / imageRect.width,
-            y: (viewPoint.y - imageRect.minY) * imageSize.height / imageRect.height
-        )
+        return mapToImage(viewPoint, imageRect: imageRect, imageSize: imageSize)
     }
 
     static func clampedImagePoint(
@@ -200,9 +197,13 @@ enum AnnotationRenderer {
             x: min(max(viewPoint.x, imageRect.minX), imageRect.maxX),
             y: min(max(viewPoint.y, imageRect.minY), imageRect.maxY)
         )
-        return CGPoint(
-            x: (clampedPoint.x - imageRect.minX) * imageSize.width / imageRect.width,
-            y: (clampedPoint.y - imageRect.minY) * imageSize.height / imageRect.height
+        return mapToImage(clampedPoint, imageRect: imageRect, imageSize: imageSize)
+    }
+
+    private static func mapToImage(_ point: CGPoint, imageRect: CGRect, imageSize: CGSize) -> CGPoint {
+        CGPoint(
+            x: (point.x - imageRect.minX) * imageSize.width / imageRect.width,
+            y: (point.y - imageRect.minY) * imageSize.height / imageRect.height
         )
     }
 

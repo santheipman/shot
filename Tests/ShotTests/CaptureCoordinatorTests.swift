@@ -7,90 +7,73 @@ struct CaptureCoordinatorTests {
     @Test
     func successfulCaptureCreatesAndPresentsOneEditor() {
         let image = NSImage(size: NSSize(width: 20, height: 10))
-        let factory = FakeEditorFactory()
+        let factory = FakeWindowFactory()
         let coordinator = makeCoordinator(image: image, factory: factory)
 
         coordinator.capture(rect: CGRect(x: 10, y: 20, width: 30, height: 40))
 
-        #expect(factory.editors.count == 1)
-        #expect(factory.editors[0].presentCallCount == 1)
+        #expect(factory.windows.count == 1)
+        #expect(factory.windows[0].presentCallCount == 1)
         #expect(factory.images[0] === image)
         #expect(factory.captureRects[0] == CGRect(x: 10, y: 20, width: 30, height: 40))
     }
 
     @Test
     func eachCaptureCreatesANewEditorWithoutPresentingAnExistingEditorAgain() {
-        let factory = FakeEditorFactory()
+        let factory = FakeWindowFactory()
         let coordinator = makeCoordinator(factory: factory)
 
         coordinator.capture(rect: CGRect(x: 0, y: 0, width: 10, height: 10))
         coordinator.capture(rect: CGRect(x: 20, y: 20, width: 10, height: 10))
 
-        #expect(factory.editors.count == 2)
-        #expect(factory.editors[0] !== factory.editors[1])
-        #expect(factory.editors[0].presentCallCount == 1)
-        #expect(factory.editors[1].presentCallCount == 1)
+        #expect(factory.windows.count == 2)
+        #expect(factory.windows[0] !== factory.windows[1])
+        #expect(factory.windows[0].presentCallCount == 1)
+        #expect(factory.windows[1].presentCallCount == 1)
     }
 
     @Test
     func closingOneEditorDoesNotCloseOrPresentAnotherEditor() {
-        let factory = FakeEditorFactory()
+        let factory = FakeWindowFactory()
         let coordinator = makeCoordinator(factory: factory)
         coordinator.capture(rect: .zero)
         coordinator.capture(rect: .zero)
 
-        factory.editors[0].close()
+        factory.windows[0].close()
 
-        #expect(factory.editors[0].closeCallCount == 1)
-        #expect(factory.editors[1].closeCallCount == 0)
-        #expect(factory.editors[1].presentCallCount == 1)
-
-        coordinator.closeAllEditors()
-
-        #expect(factory.editors[0].closeCallCount == 1)
-        #expect(factory.editors[1].closeCallCount == 1)
-    }
-
-    @Test
-    func closeAllEditorsClosesEveryLiveEditor() {
-        let factory = FakeEditorFactory()
-        let coordinator = makeCoordinator(factory: factory)
-        coordinator.capture(rect: .zero)
-        coordinator.capture(rect: .zero)
-
-        coordinator.closeAllEditors()
-
-        #expect(factory.editors.map(\.closeCallCount) == [1, 1])
+        #expect(factory.windows[0].closeCallCount == 1)
+        #expect(factory.windows[1].closeCallCount == 0)
+        #expect(factory.windows[1].presentCallCount == 1)
     }
 
     @Test
     func captureFailureCreatesNoEditorAndReportsTheError() {
         let expectedError = TestError.captureFailed
-        let factory = FakeEditorFactory()
+        let factory = FakeWindowFactory()
         var reportedError: Error?
         let coordinator = CaptureCoordinator(
             captureScreen: { _, completion in completion(.failure(expectedError)) },
-            makeEditor: factory.makeEditor,
+            makeEditor: factory.make,
             handleCaptureError: { reportedError = $0 }
         )
 
         coordinator.capture(rect: .zero)
 
-        #expect(factory.editors.isEmpty)
+        #expect(factory.windows.isEmpty)
         #expect(reportedError as? TestError == expectedError)
     }
 
     @Test
     func fullscreenCaptureUsesResolvedDisplayBoundsAndOpensEditor() {
         let expectedRect = CGRect(x: 1440, y: 0, width: 1920, height: 1080)
-        let factory = FakeEditorFactory()
+        let factory = FakeWindowFactory()
         var capturedRect: CGRect?
         let coordinator = CaptureCoordinator(
             captureScreen: { rect, completion in
                 capturedRect = rect
                 completion(.success(NSImage(size: rect.size)))
             },
-            makeEditor: factory.makeEditor,
+            makeEditor: factory.make,
             handleCaptureError: { _ in Issue.record("Unexpected capture error") },
             fullscreenRect: { expectedRect }
         )
@@ -99,18 +82,18 @@ struct CaptureCoordinatorTests {
 
         #expect(capturedRect == expectedRect)
         #expect(factory.captureRects == [expectedRect])
-        #expect(factory.editors.count == 1)
-        #expect(factory.editors[0].presentCallCount == 1)
+        #expect(factory.windows.count == 1)
+        #expect(factory.windows[0].presentCallCount == 1)
     }
 
     @Test
     func fullscreenCaptureWithoutDisplayReportsErrorAndDoesNotCapture() {
-        let factory = FakeEditorFactory()
+        let factory = FakeWindowFactory()
         var captureCalled = false
         var reportedError: Error?
         let coordinator = CaptureCoordinator(
             captureScreen: { _, _ in captureCalled = true },
-            makeEditor: factory.makeEditor,
+            makeEditor: factory.make,
             handleCaptureError: { reportedError = $0 },
             fullscreenRect: { nil }
         )
@@ -118,117 +101,94 @@ struct CaptureCoordinatorTests {
         coordinator.captureFullscreen()
 
         #expect(!captureCalled)
-        #expect(factory.editors.isEmpty)
+        #expect(factory.windows.isEmpty)
         #expect(reportedError as? ScreenCaptureError == .displayNotFound)
     }
 
     @Test
-    func pinCaptureCreatesAndPresentsPinWithoutCreatingEditor() {
+    func pinPresentationCreatesAndPresentsPinWithoutCreatingEditor() {
         let image = NSImage(size: NSSize(width: 40, height: 20))
-        let editorFactory = FakeEditorFactory()
-        let pinFactory = FakePinFactory()
+        let editorFactory = FakeWindowFactory()
+        let pinFactory = FakeWindowFactory(firstIdentifier: 100)
         let rect = CGRect(x: 10, y: 20, width: 40, height: 20)
         let coordinator = CaptureCoordinator(
-            captureScreen: { _, completion in completion(.success(image)) },
-            makeEditor: editorFactory.makeEditor,
-            makePin: pinFactory.makePin,
+            makeEditor: editorFactory.make,
+            makePin: pinFactory.make,
             handleCaptureError: { _ in Issue.record("Unexpected capture error") }
         )
 
-        coordinator.capturePin(rect: rect)
+        coordinator.presentPin(image: image, near: rect)
 
-        #expect(editorFactory.editors.isEmpty)
-        #expect(pinFactory.pins.count == 1)
-        #expect(pinFactory.pins[0].presentCallCount == 1)
+        #expect(editorFactory.windows.isEmpty)
+        #expect(pinFactory.windows.count == 1)
+        #expect(pinFactory.windows[0].presentCallCount == 1)
         #expect(pinFactory.images[0] === image)
         #expect(pinFactory.captureRects == [rect])
     }
 
     @Test
     func pinsCoexistAndCloseIndependently() {
-        let editorFactory = FakeEditorFactory()
-        let pinFactory = FakePinFactory()
-        let coordinator = CaptureCoordinator(
-            captureScreen: { _, completion in
-                completion(.success(NSImage(size: NSSize(width: 20, height: 10))))
-            },
-            makeEditor: editorFactory.makeEditor,
-            makePin: pinFactory.makePin,
-            handleCaptureError: { _ in Issue.record("Unexpected capture error") }
+        let pinFactory = FakeWindowFactory(firstIdentifier: 100)
+        let coordinator = CaptureCoordinator(makePin: pinFactory.make)
+
+        coordinator.presentPin(
+            image: NSImage(size: NSSize(width: 20, height: 10)),
+            near: .zero
         )
-
-        coordinator.capturePin(rect: .zero)
-        coordinator.capturePin(rect: .zero)
-        pinFactory.pins[0].close()
-
-        #expect(pinFactory.pins.count == 2)
-        #expect(pinFactory.pins[0].closeCallCount == 1)
-        #expect(pinFactory.pins[1].closeCallCount == 0)
-        #expect(pinFactory.pins[1].presentCallCount == 1)
-    }
-
-    @Test
-    func failedPinCaptureCreatesNeitherPinNorEditorAndReportsError() {
-        let expectedError = TestError.captureFailed
-        let editorFactory = FakeEditorFactory()
-        let pinFactory = FakePinFactory()
-        var reportedError: Error?
-        let coordinator = CaptureCoordinator(
-            captureScreen: { _, completion in completion(.failure(expectedError)) },
-            makeEditor: editorFactory.makeEditor,
-            makePin: pinFactory.makePin,
-            handleCaptureError: { reportedError = $0 }
+        coordinator.presentPin(
+            image: NSImage(size: NSSize(width: 20, height: 10)),
+            near: .zero
         )
+        pinFactory.windows[0].close()
 
-        coordinator.capturePin(rect: .zero)
-
-        #expect(editorFactory.editors.isEmpty)
-        #expect(pinFactory.pins.isEmpty)
-        #expect(reportedError as? TestError == expectedError)
+        #expect(pinFactory.windows.count == 2)
+        #expect(pinFactory.windows[0].closeCallCount == 1)
+        #expect(pinFactory.windows[1].closeCallCount == 0)
+        #expect(pinFactory.windows[1].presentCallCount == 1)
     }
 
     @Test
     func textCaptureResultCreatesASeparateWindow() {
         let image = NSImage(size: NSSize(width: 40, height: 20))
-        let editorFactory = FakeEditorFactory()
-        let resultFactory = FakeOCRResultFactory()
+        let editorFactory = FakeWindowFactory()
+        let resultFactory = FakeWindowFactory(firstIdentifier: 200)
         let rect = CGRect(x: 10, y: 20, width: 40, height: 20)
         let coordinator = CaptureCoordinator(
-            makeEditor: editorFactory.makeEditor,
-            makeOCRResult: resultFactory.makeResult
+            makeEditor: editorFactory.make,
+            makeOCRResult: resultFactory.make
         )
 
         coordinator.presentOCRResult(image: image, near: rect)
 
-        #expect(editorFactory.editors.isEmpty)
-        #expect(resultFactory.results.count == 1)
-        #expect(resultFactory.results[0].presentCallCount == 1)
+        #expect(editorFactory.windows.isEmpty)
+        #expect(resultFactory.windows.count == 1)
+        #expect(resultFactory.windows[0].presentCallCount == 1)
         #expect(resultFactory.images[0] === image)
         #expect(resultFactory.captureRects == [rect])
     }
 
     @Test
     func textCaptureResultWindowsCloseIndependently() {
-        let resultFactory = FakeOCRResultFactory()
-        let coordinator = CaptureCoordinator(makeOCRResult: resultFactory.makeResult)
+        let resultFactory = FakeWindowFactory(firstIdentifier: 200)
+        let coordinator = CaptureCoordinator(makeOCRResult: resultFactory.make)
 
         coordinator.presentOCRResult(image: NSImage(size: NSSize(width: 10, height: 10)), near: .zero)
         coordinator.presentOCRResult(image: NSImage(size: NSSize(width: 10, height: 10)), near: .zero)
-        resultFactory.results[0].close()
+        resultFactory.windows[0].close()
 
-        #expect(resultFactory.results.count == 2)
-        #expect(resultFactory.results[0].closeCallCount == 1)
-        #expect(resultFactory.results[1].closeCallCount == 0)
-        #expect(resultFactory.results[1].presentCallCount == 1)
+        #expect(resultFactory.windows.count == 2)
+        #expect(resultFactory.windows[0].closeCallCount == 1)
+        #expect(resultFactory.windows[1].closeCallCount == 0)
+        #expect(resultFactory.windows[1].presentCallCount == 1)
     }
 
     private func makeCoordinator(
         image: NSImage = NSImage(size: NSSize(width: 10, height: 10)),
-        factory: FakeEditorFactory
+        factory: FakeWindowFactory
     ) -> CaptureCoordinator {
         CaptureCoordinator(
             captureScreen: { _, completion in completion(.success(image)) },
-            makeEditor: factory.makeEditor,
+            makeEditor: factory.make,
             handleCaptureError: { _ in
                 Issue.record("Unexpected capture error")
             }
@@ -236,97 +196,27 @@ struct CaptureCoordinatorTests {
     }
 }
 
-private final class FakeEditorFactory {
-    private var nextIdentifier = 1
-    private(set) var editors: [FakeEditorWindow] = []
+private final class FakeWindowFactory {
+    private var nextIdentifier: Int
+    private(set) var windows: [FakeWindow] = []
     private(set) var images: [NSImage] = []
     private(set) var captureRects: [CGRect] = []
 
-    func makeEditor(image: NSImage, captureRect: CGRect) -> any EditorWindow {
-        let editor = FakeEditorWindow(identifier: nextIdentifier)
+    init(firstIdentifier: Int = 1) {
+        nextIdentifier = firstIdentifier
+    }
+
+    func make(image: NSImage, captureRect: CGRect) -> any ManagedWindow {
+        let window = FakeWindow(identifier: nextIdentifier)
         nextIdentifier += 1
-        editors.append(editor)
+        windows.append(window)
         images.append(image)
         captureRects.append(captureRect)
-        return editor
+        return window
     }
 }
 
-private final class FakeEditorWindow: EditorWindow {
-    let identifier: Int?
-    var onClose: ((Int) -> Void)?
-    private(set) var presentCallCount = 0
-    private(set) var closeCallCount = 0
-
-    init(identifier: Int) {
-        self.identifier = identifier
-    }
-
-    func present() {
-        presentCallCount += 1
-    }
-
-    func close() {
-        guard closeCallCount == 0, let identifier else { return }
-        closeCallCount += 1
-        onClose?(identifier)
-    }
-}
-
-private final class FakePinFactory {
-    private var nextIdentifier = 100
-    private(set) var pins: [FakePinWindow] = []
-    private(set) var images: [NSImage] = []
-    private(set) var captureRects: [CGRect] = []
-
-    func makePin(image: NSImage, captureRect: CGRect) -> any PinWindow {
-        let pin = FakePinWindow(identifier: nextIdentifier)
-        nextIdentifier += 1
-        pins.append(pin)
-        images.append(image)
-        captureRects.append(captureRect)
-        return pin
-    }
-}
-
-private final class FakePinWindow: PinWindow {
-    let identifier: Int?
-    var onClose: ((Int) -> Void)?
-    private(set) var presentCallCount = 0
-    private(set) var closeCallCount = 0
-
-    init(identifier: Int) {
-        self.identifier = identifier
-    }
-
-    func present() {
-        presentCallCount += 1
-    }
-
-    func close() {
-        guard closeCallCount == 0, let identifier else { return }
-        closeCallCount += 1
-        onClose?(identifier)
-    }
-}
-
-private final class FakeOCRResultFactory {
-    private var nextIdentifier = 200
-    private(set) var results: [FakeOCRResultWindow] = []
-    private(set) var images: [NSImage] = []
-    private(set) var captureRects: [CGRect] = []
-
-    func makeResult(image: NSImage, captureRect: CGRect) -> any OCRResultWindow {
-        let result = FakeOCRResultWindow(identifier: nextIdentifier)
-        nextIdentifier += 1
-        results.append(result)
-        images.append(image)
-        captureRects.append(captureRect)
-        return result
-    }
-}
-
-private final class FakeOCRResultWindow: OCRResultWindow {
+private final class FakeWindow: ManagedWindow {
     let identifier: Int?
     var onClose: ((Int) -> Void)?
     private(set) var presentCallCount = 0

@@ -1,9 +1,6 @@
 import AppKit
 
-final class PinWindowController: NSWindowController, NSWindowDelegate, PinWindow {
-    var onClose: ((Int) -> Void)?
-    var identifier: Int? { window?.windowNumber }
-
+final class PinWindowController: ManagedWindowController {
     init(image: NSImage, captureRect: CGRect) {
         let panel = NSPanel(
             contentRect: .zero,
@@ -36,25 +33,12 @@ final class PinWindowController: NSWindowController, NSWindowDelegate, PinWindow
         fatalError("init(coder:) has not been implemented")
     }
 
-    func present() {
+    override func present() {
         window?.orderFrontRegardless()
     }
 
-    func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow else { return }
-        let windowNumber = window.windowNumber
-        window.delegate = nil
-        self.window = nil
-        let callback = onClose
-        onClose = nil
-        DispatchQueue.main.async {
-            callback?(windowNumber)
-        }
-    }
-
     private func sizeAndPosition(panel: NSPanel, image: NSImage, captureRect: CGRect) {
-        let screen = Self.screen(containingQuartzPoint: captureRect.origin) ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let visibleFrame = Self.visibleFrame(nearQuartzPoint: captureRect.origin)
         let maximum = CGSize(
             width: visibleFrame.width * 0.7,
             height: visibleFrame.height * 0.7
@@ -74,37 +58,19 @@ final class PinWindowController: NSWindowController, NSWindowDelegate, PinWindow
         let minimumWidth = min(120, size.width)
         panel.minSize = NSSize(width: minimumWidth, height: minimumWidth / imageRatio)
         panel.setContentSize(size)
-        panel.setFrameOrigin(
-            CGPoint(
-                x: visibleFrame.midX - panel.frame.width / 2,
-                y: visibleFrame.midY - panel.frame.height / 2
-            )
-        )
-    }
-
-    private static func screen(containingQuartzPoint point: CGPoint) -> NSScreen? {
-        NSScreen.screens.first { screen in
-            guard
-                let number = screen.deviceDescription[
-                    NSDeviceDescriptionKey("NSScreenNumber")
-                ] as? NSNumber
-            else {
-                return false
-            }
-            return CGDisplayBounds(CGDirectDisplayID(number.uint32Value)).contains(point)
-        }
+        centerWindow(in: visibleFrame)
     }
 }
 
 private final class PinContentView: NSView {
     private let image: NSImage
     private let closeButton = NSButton()
-    private let closeTarget: ClosureTarget
+    private let onClose: () -> Void
     private var trackingArea: NSTrackingArea?
 
     init(image: NSImage, onClose: @escaping () -> Void) {
         self.image = image
-        closeTarget = ClosureTarget(action: onClose)
+        self.onClose = onClose
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 5
@@ -120,8 +86,8 @@ private final class PinContentView: NSView {
         closeButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
         closeButton.layer?.cornerRadius = 10
         closeButton.isHidden = true
-        closeButton.target = closeTarget
-        closeButton.action = #selector(ClosureTarget.invoke)
+        closeButton.target = self
+        closeButton.action = #selector(closeWindow)
         addSubview(closeButton)
 
         NSLayoutConstraint.activate([
@@ -170,16 +136,8 @@ private final class PinContentView: NSView {
     }
 
     override var mouseDownCanMoveWindow: Bool { true }
-}
 
-private final class ClosureTarget: NSObject {
-    private let action: () -> Void
-
-    init(action: @escaping () -> Void) {
-        self.action = action
-    }
-
-    @objc func invoke() {
-        action()
+    @objc private func closeWindow() {
+        onClose()
     }
 }

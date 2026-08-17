@@ -1,9 +1,6 @@
 import AppKit
 
-final class PreviewWindowController: NSWindowController, NSWindowDelegate, EditorWindow {
-    var onClose: ((Int) -> Void)?
-    var identifier: Int? { window?.windowNumber }
-
+final class PreviewWindowController: ManagedWindowController {
     init(image: NSImage, captureRect: CGRect) {
         let model = AnnotationEditorModel(sourceImage: image)
 
@@ -84,37 +81,8 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func showWindow(_ sender: Any?) {
-        guard let window else { return }
-        // Mark the newly created editor as key before activating Shot.
-        // AppKit then brings forward this key window rather than an older
-        // editor that belongs to another workspace.
-        window.makeKeyAndOrderFront(sender)
-        if !NSApp.isActive {
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(sender)
-        }
-    }
-
-    func present() {
-        showWindow(nil)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow else { return }
-        let windowNumber = window.windowNumber
-        window.delegate = nil
-        self.window = nil
-        let callback = onClose
-        onClose = nil
-        DispatchQueue.main.async {
-            callback?(windowNumber)
-        }
-    }
-
     private func sizeAndPosition(panel: NSPanel, image: NSImage, captureRect: CGRect) {
-        let screen = Self.screen(containingQuartzPoint: captureRect.origin) ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let visibleFrame = Self.visibleFrame(nearQuartzPoint: captureRect.origin)
         let maximum = CGSize(width: visibleFrame.width * 0.78, height: visibleFrame.height * 0.78)
         let minimum = CGSize(width: 560, height: 280)
         let toolbarHeight: CGFloat = 56
@@ -132,12 +100,7 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
                 height: max(imageHeight + toolbarHeight, minimum.height)
             )
         )
-        panel.setFrameOrigin(
-            CGPoint(
-                x: visibleFrame.midX - panel.frame.width / 2,
-                y: visibleFrame.midY - panel.frame.height / 2
-            )
-        )
+        centerWindow(in: visibleFrame)
     }
 
     private static func save(image: NSImage, from window: NSWindow?) {
@@ -199,19 +162,6 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate, Edito
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         return formatter.string(from: Date())
     }
-
-    private static func screen(containingQuartzPoint point: CGPoint) -> NSScreen? {
-        NSScreen.screens.first { screen in
-            guard
-                let number = screen.deviceDescription[
-                    NSDeviceDescriptionKey("NSScreenNumber")
-                ] as? NSNumber
-            else {
-                return false
-            }
-            return CGDisplayBounds(CGDirectDisplayID(number.uint32Value)).contains(point)
-        }
-    }
 }
 
 private final class EditorPanel: NSPanel {
@@ -221,7 +171,7 @@ private final class EditorPanel: NSPanel {
     var shouldHandleCanvasShortcuts: (() -> Bool)?
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
+        if event.isEscapeKey {
             onEscape?()
             return
         }
@@ -353,13 +303,9 @@ private final class PreviewViewController: NSViewController {
         )
     }
 
-    func finish() {
-        onFinish?()
-    }
-
     func handleEscape() {
         if !canvas.endTextEditing() {
-            finish()
+            onFinish?()
         }
     }
 
