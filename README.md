@@ -1,6 +1,7 @@
 # Shot
 
-A native macOS menu-bar screenshot app.
+A minimal, native macOS screenshot app that works locally. Capture and edit with
+a few keystrokes.
 
 ## Features
 
@@ -37,6 +38,13 @@ Recording**), then restart it:
 ```sh
 ./scripts/rebuild-and-restart.sh
 ```
+
+## Trust and privacy
+
+- Shot works locally with no network requests, analytics, updater, or remote
+  dependencies. OCR uses Apple Vision on your Mac.
+- Shot only asks for screen-recording permission. Source builds are locally
+  signed, but not Apple-notarized or protected by macOS App Sandbox.
 
 ## Contribution
 

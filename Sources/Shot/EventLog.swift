@@ -17,10 +17,9 @@ final class EventLog {
     }
 
     func write(_ message: String) {
-        let line = "\(formatter.string(from: Date())) \(message)\n"
-        NSLog("Shot: %@", message)
-
         guard let fileURL else { return }
+
+        let line = "\(formatter.string(from: Date())) \(message)\n"
         queue.async {
             let data = Data(line.utf8)
             if FileManager.default.fileExists(atPath: fileURL.path),

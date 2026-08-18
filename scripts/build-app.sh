@@ -41,7 +41,6 @@ export CLANG_MODULE_CACHE_PATH="$clang_cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$clang_cache"
 
 swift_args=(
-    --disable-sandbox
     --cache-path "$swiftpm_cache"
     --config-path "$swiftpm_config"
     --security-path "$swiftpm_security"
