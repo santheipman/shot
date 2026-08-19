@@ -10,7 +10,7 @@ final class PreviewWindowController: ManagedWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.title = PreviewWindowController.defaultTitle
+        panel.title = "Shot"
         panel.level = .floating
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -27,14 +27,26 @@ final class PreviewWindowController: ManagedWindowController {
         panel.delegate = self
         let editor = PreviewViewController(model: model)
         editor.onFinish = { [weak panel, weak editor] in
-            if Self.copyToClipboard(from: editor, in: panel) {
-                panel?.close()
+            guard let flattened = editor?.flattenedImage() else {
+                Self.showError(
+                    title: "Copy failed",
+                    message: "Shot couldn’t prepare the edited image.",
+                    from: panel
+                )
+                return
             }
-        }
-        editor.onCopy = { [weak panel, weak editor] in
-            if Self.copyToClipboard(from: editor, in: panel) {
-                Self.flashTitle("Copied", on: panel)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.writeObjects([flattened]) else {
+                Self.showError(
+                    title: "Copy failed",
+                    message: "Shot couldn’t write the edited image to the clipboard.",
+                    from: panel
+                )
+                return
             }
+            EventLog.shared.write("edited_image_copied")
+            panel?.close()
         }
         editor.onSave = { [weak panel, weak editor] in
             guard let flattened = editor?.flattenedImage() else {
@@ -45,11 +57,10 @@ final class PreviewWindowController: ManagedWindowController {
                 )
                 return
             }
-            if Self.save(image: flattened, from: panel) {
-                Self.flashTitle("Saved", on: panel)
-            }
+            Self.save(image: flattened, from: panel)
         }
         panel.onEscape = { [weak editor] in editor?.handleEscape() }
+        panel.onUndo = { [weak editor] in editor?.undo() }
         panel.shouldHandleCanvasShortcuts = { [weak editor] in
             editor?.isEditingText == false
         }
@@ -57,24 +68,9 @@ final class PreviewWindowController: ManagedWindowController {
             switch shortcut {
             case .save:
                 editor?.save()
-            case .copy:
-                editor?.copyImage()
-            case .undo:
-                editor?.undo()
-            case .redo:
-                editor?.redo()
             case let .selectTool(tool):
                 editor?.selectTool(tool)
-            case let .selectColor(color):
-                editor?.selectColor(color)
-            case let .adjustStyle(delta):
-                editor?.adjustStyle(by: delta)
-            case .toggleHelp:
-                editor?.toggleHelp()
             }
-        }
-        panel.onDrawKey = { [weak editor] key in
-            editor?.applyDrawKey(key) ?? false
         }
         panel.contentViewController = editor
 
@@ -107,47 +103,7 @@ final class PreviewWindowController: ManagedWindowController {
         centerWindow(in: visibleFrame)
     }
 
-    static let defaultTitle = "Shot"
-
-    @discardableResult
-    private static func copyToClipboard(
-        from editor: PreviewViewController?,
-        in panel: NSPanel?
-    ) -> Bool {
-        guard let flattened = editor?.flattenedImage() else {
-            showError(
-                title: "Copy failed",
-                message: "Shot couldn’t prepare the edited image.",
-                from: panel
-            )
-            return false
-        }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.writeObjects([flattened]) else {
-            showError(
-                title: "Copy failed",
-                message: "Shot couldn’t write the edited image to the clipboard.",
-                from: panel
-            )
-            return false
-        }
-        EventLog.shared.write("edited_image_copied")
-        return true
-    }
-
-    /// The editor has no status area, so confirm otherwise invisible actions
-    /// in the title bar for a moment.
-    private static func flashTitle(_ text: String, on panel: NSPanel?) {
-        guard let panel else { return }
-        panel.title = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak panel] in
-            panel?.title = defaultTitle
-        }
-    }
-
-    @discardableResult
-    private static func save(image: NSImage, from window: NSWindow?) -> Bool {
+    private static func save(image: NSImage, from window: NSWindow?) {
         let directory = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Documents/screenshot", isDirectory: true)
         let url = ScreenshotFileNamer.availableURL(
@@ -165,7 +121,7 @@ final class PreviewWindowController: ManagedWindowController {
                 message: "Shot couldn’t encode the edited image as PNG.",
                 from: window
             )
-            return false
+            return
         }
 
         do {
@@ -175,7 +131,6 @@ final class PreviewWindowController: ManagedWindowController {
             )
             try png.write(to: url, options: .atomic)
             EventLog.shared.write("image_saved path=\(url.path)")
-            return true
         } catch {
             EventLog.shared.write("image_save_failed error=\(error.localizedDescription)")
             showError(
@@ -183,7 +138,6 @@ final class PreviewWindowController: ManagedWindowController {
                 message: "Shot couldn’t save the image.\n\n\(error.localizedDescription)",
                 from: window
             )
-            return false
         }
     }
 
@@ -212,8 +166,8 @@ final class PreviewWindowController: ManagedWindowController {
 
 private final class EditorPanel: NSPanel {
     var onEscape: (() -> Void)?
+    var onUndo: (() -> Void)?
     var onShortcut: ((EditorShortcut) -> Void)?
-    var onDrawKey: ((SelectionKey) -> Bool)?
     var shouldHandleCanvasShortcuts: (() -> Bool)?
 
     override func keyDown(with event: NSEvent) {
@@ -225,18 +179,17 @@ private final class EditorPanel: NSPanel {
             super.keyDown(with: event)
             return
         }
-        if let shortcut = EditorShortcut.resolve(
-            characters: event.charactersIgnoringModifiers,
-            modifiers: event.modifierFlags
-        ) {
-            onShortcut?(shortcut)
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "z" {
+            onUndo?()
             return
         }
-        // Whatever the editor does not claim may still be a drawing motion.
-        if let key = SelectionKey.resolve(
-            characters: event.charactersIgnoringModifiers,
-            modifiers: event.modifierFlags
-        ), onDrawKey?(key) == true {
+        if !event.isARepeat,
+           let shortcut = EditorShortcut.resolve(
+               characters: event.charactersIgnoringModifiers,
+               modifiers: event.modifierFlags
+           ) {
+            onShortcut?(shortcut)
             return
         }
         super.keyDown(with: event)
@@ -247,17 +200,14 @@ private final class PreviewViewController: NSViewController {
     private let model: AnnotationEditorModel
     private let canvas: AnnotationCanvasView
     private let toolControl: NSSegmentedControl
-    private let colorControl: NSPopUpButton
     private let styleControl: NSPopUpButton
     var onFinish: (() -> Void)?
-    var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
     var isEditingText: Bool { canvas.isEditingText }
 
     init(model: AnnotationEditorModel) {
         self.model = model
         canvas = AnnotationCanvasView(model: model)
-        colorControl = NSPopUpButton()
         styleControl = NSPopUpButton()
         let toolImages = [
             NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil"),
@@ -296,24 +246,21 @@ private final class PreviewViewController: NSViewController {
         toolControl.setToolTip("Arrow (A)", forSegment: 2)
         toolControl.setToolTip("Text (T)", forSegment: 3)
 
-        colorControl.addItems(withTitles: AnnotationColor.allCases.map(\.rawValue))
-        colorControl.selectItem(withTitle: model.color.rawValue)
-        colorControl.toolTip = "Color (1–6)"
-        colorControl.target = self
-        colorControl.action = #selector(changeColor(_:))
+        let color = NSPopUpButton()
+        color.addItems(withTitles: AnnotationColor.allCases.map(\.rawValue))
+        color.toolTip = "Color"
+        color.target = self
+        color.action = #selector(changeColor(_:))
 
         configureStyleControl()
         styleControl.target = self
         styleControl.action = #selector(changeStyle(_:))
 
-        let help = NSButton(title: "?", target: self, action: #selector(toggleHelp))
-        help.toolTip = "Shortcuts (?)"
-
         let save = NSButton(title: "Save", target: self, action: #selector(save))
-        save.toolTip = "Save (S or ⌘S)"
+        save.toolTip = "Save (S)"
 
         let controls = NSStackView(views: [
-            toolControl, colorControl, styleControl, NSView(), help, save,
+            toolControl, color, styleControl, NSView(), save,
         ])
         controls.translatesAutoresizingMaskIntoConstraints = false
         controls.orientation = .horizontal
@@ -357,53 +304,15 @@ private final class PreviewViewController: NSViewController {
     }
 
     func handleEscape() {
-        if canvas.dismissHelp() { return }
-        if canvas.cancelKeyboardShape() { return }
         if !canvas.endTextEditing() {
             onFinish?()
         }
-    }
-
-    @objc func toggleHelp() {
-        canvas.toggleHelp()
-    }
-
-    func applyDrawKey(_ key: SelectionKey) -> Bool {
-        canvas.applyKeyboard(key)
     }
 
     @objc func undo() {
         if model.undo() {
             canvas.needsDisplay = true
         }
-    }
-
-    @objc func redo() {
-        if model.redo() {
-            canvas.needsDisplay = true
-        }
-    }
-
-    func copyImage() {
-        onCopy?()
-    }
-
-    func selectColor(_ color: AnnotationColor) {
-        model.color = color
-        colorControl.selectItem(withTitle: color.rawValue)
-        canvas.updateTextEditorStyle()
-    }
-
-    /// Moves whichever scale the toolbar is currently showing: line thickness,
-    /// or text size while the text tool is selected.
-    func adjustStyle(by delta: Int) {
-        if model.tool == .text {
-            model.textSize = model.textSize.stepped(by: delta)
-            canvas.updateTextEditorStyle()
-        } else {
-            model.thickness = model.thickness.stepped(by: delta)
-        }
-        configureStyleControl()
     }
 
     @objc func save() {
@@ -418,7 +327,6 @@ private final class PreviewViewController: NSViewController {
         }
         configureStyleControl()
         canvas.updateCursor()
-        canvas.refreshKeyboardShape()
     }
 
     @objc private func changeTool(_ sender: NSSegmentedControl) {
@@ -448,11 +356,11 @@ private final class PreviewViewController: NSViewController {
         if model.tool == .text {
             styleControl.addItems(withTitles: AnnotationTextSize.allCases.map(\.rawValue))
             styleControl.selectItem(withTitle: model.textSize.rawValue)
-            styleControl.toolTip = "Text size ([ and ])"
+            styleControl.toolTip = "Text size"
         } else {
             styleControl.addItems(withTitles: AnnotationThickness.allCases.map(\.rawValue))
             styleControl.selectItem(withTitle: model.thickness.rawValue)
-            styleControl.toolTip = "Line thickness ([ and ])"
+            styleControl.toolTip = "Line thickness"
         }
     }
 }
@@ -471,8 +379,6 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     private var textEditor: InlineTextView?
     private var textOrigin: CGPoint?
     private var textMaxWidth: CGFloat?
-    private var keyboard: KeyboardSelection?
-    private var showsHelp = false
 
     var isEditingText: Bool { textEditor != nil }
 
@@ -528,52 +434,11 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             imageSize: model.sourceImage.size,
             destinationRect: imageRect
         )
-
-        if let keyboard {
-            let cursor = viewPoint(for: keyboard.cursor, in: imageRect)
-            if keyboard.anchor == nil {
-                KeyboardChrome.drawCrosshair(at: cursor, in: imageRect)
-            }
-            KeyboardChrome.drawBadge(
-                keyboard.anchor.map { anchor in
-                    let shape = CGRect(spanning: anchor, keyboard.cursor)
-                    return "\(Int(shape.width)) × \(Int(shape.height))"
-                } ?? "\(Int(keyboard.cursor.x)), \(Int(keyboard.cursor.y))",
-                near: cursor,
-                in: bounds
-            )
-        }
-
-        if showsHelp {
-            KeyboardChrome.drawHelp(
-                title: "Editor shortcuts",
-                rows: Self.helpRows,
-                in: bounds
-            )
-        }
     }
-
-    private static let helpRows: [(keys: String, action: String)] = [
-        ("P  R  A  T", "Pencil, Rectangle, Arrow, Text"),
-        ("1 – 6", "Red, Yellow, Green, Blue, Black, White"),
-        ("[  ]", "Thinner or thicker, smaller or larger"),
-        ("hjkl / arrows", "Move the cursor \(Int(SelectionKey.step)) pt"),
-        ("HJKL / ⇧arrows", "Move the cursor \(Int(SelectionKey.preciseStep)) pt"),
-        ("0  $  gg  G  M", "Jump to an edge or the middle"),
-        ("v  space", "Anchor, or place text"),
-        ("o", "Swap the two ends"),
-        ("⏎  y", "Commit the shape"),
-        ("S  ⌘S", "Save"),
-        ("⌘C", "Copy and keep editing"),
-        ("⌘Z  ⌘⇧Z", "Undo, redo"),
-        ("esc", "Cancel the shape, else copy and close"),
-        ("?", "Hide this"),
-    ]
 
     override func mouseDown(with event: NSEvent) {
         endTextEditing()
         guard let point = imagePoint(for: event) else { return }
-        keyboard?.place(at: point)
         switch model.tool {
         case .pencil: draft = .pencil([point])
         case .rectangle: draft = .rectangle(start: point, end: point)
@@ -620,112 +485,6 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
 
     func updateCursor() {
         window?.invalidateCursorRects(for: self)
-    }
-
-    // MARK: - Keyboard drawing
-
-    func toggleHelp() {
-        showsHelp.toggle()
-        needsDisplay = true
-    }
-
-    @discardableResult
-    func dismissHelp() -> Bool {
-        guard showsHelp else { return false }
-        showsHelp = false
-        needsDisplay = true
-        return true
-    }
-
-    /// Drops an anchored but uncommitted shape. Returns false when there is
-    /// nothing to back out of, so Escape can fall through to its usual job.
-    @discardableResult
-    func cancelKeyboardShape() -> Bool {
-        guard var model = keyboard, model.anchor != nil else { return false }
-        model.place(at: model.cursor)
-        keyboard = model
-        draft = nil
-        needsDisplay = true
-        return true
-    }
-
-    /// Keeps the live preview in step with a tool change mid-shape.
-    func refreshKeyboardShape() {
-        updateKeyboardDraft()
-        needsDisplay = true
-    }
-
-    func applyKeyboard(_ key: SelectionKey) -> Bool {
-        guard !isEditingText else { return false }
-
-        switch key {
-        case .cancel:
-            return cancelKeyboardShape()
-        case .confirm:
-            return commitKeyboardShape()
-        case .toggleAnchor where model.tool == .text && keyboard?.anchor == nil:
-            beginTextEditing(at: keyboardCursor())
-            return true
-        case let .digit(value) where value != 0:
-            // 1-6 already pick colours, so the editor has no count prefixes.
-            // A bare 0 still jumps to the left edge.
-            return false
-        default:
-            break
-        }
-
-        _ = keyboardCursor()
-        guard var selection = keyboard else { return false }
-        let outcome = selection.apply(key)
-        keyboard = selection
-        guard outcome == .redraw else { return true }
-        updateKeyboardDraft()
-        needsDisplay = true
-        return true
-    }
-
-    @discardableResult
-    private func keyboardCursor() -> CGPoint {
-        if let keyboard { return keyboard.cursor }
-        let size = model.sourceImage.size
-        let selection = KeyboardSelection(
-            bounds: CGRect(origin: .zero, size: size),
-            cursor: CGPoint(x: size.width / 2, y: size.height / 2),
-            isFlipped: true
-        )
-        keyboard = selection
-        needsDisplay = true
-        return selection.cursor
-    }
-
-    private func commitKeyboardShape() -> Bool {
-        guard var selection = keyboard, let start = selection.anchor else { return false }
-        let end = selection.cursor
-        guard start != end, let shape = model.tool.shape(from: start, to: end) else {
-            return false
-        }
-        model.commit(shape)
-        selection.place(at: end)
-        keyboard = selection
-        draft = nil
-        needsDisplay = true
-        return true
-    }
-
-    private func updateKeyboardDraft() {
-        guard let keyboard, let anchor = keyboard.anchor else {
-            draft = nil
-            return
-        }
-        draft = model.tool.shape(from: anchor, to: keyboard.cursor)
-    }
-
-    private func viewPoint(for imagePoint: CGPoint, in imageRect: CGRect) -> CGPoint {
-        let scale = imageRect.width / max(model.sourceImage.size.width, 1)
-        return CGPoint(
-            x: imageRect.minX + imagePoint.x * scale,
-            y: imageRect.minY + imagePoint.y * scale
-        )
     }
 
     func updateTextEditorStyle() {
