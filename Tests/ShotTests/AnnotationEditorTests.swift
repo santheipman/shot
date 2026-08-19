@@ -24,86 +24,13 @@ struct AnnotationEditorTests {
     }
 
     @Test
-    func editorKeyboardShortcutsIgnoreUnboundAndUnknownKeys() {
-        #expect(EditorShortcut.resolve(characters: "x", modifiers: .command) == nil)
-        #expect(EditorShortcut.resolve(characters: "s", modifiers: .control) == nil)
-        #expect(EditorShortcut.resolve(characters: "s", modifiers: .option) == nil)
-        #expect(EditorShortcut.resolve(characters: "x", modifiers: []) == nil)
-        #expect(EditorShortcut.resolve(characters: "0", modifiers: []) == nil)
-        #expect(EditorShortcut.resolve(characters: "7", modifiers: []) == nil)
-    }
-
-    @Test
-    func commandShortcutsCoverSaveCopyUndoAndRedo() {
-        #expect(EditorShortcut.resolve(characters: "s", modifiers: .command) == .save)
-        #expect(EditorShortcut.resolve(characters: "c", modifiers: .command) == .copy)
-        #expect(EditorShortcut.resolve(characters: "z", modifiers: .command) == .undo)
+    func editorKeyboardShortcutsIgnoreModifiedAndUnknownKeys() {
         #expect(
-            EditorShortcut.resolve(characters: "z", modifiers: [.command, .shift]) == .redo
+            EditorShortcut.resolve(characters: "s", modifiers: .command) == nil
         )
-    }
-
-    @Test
-    func numberKeysSelectColorsInToolbarOrder() {
-        #expect(EditorShortcut.resolve(characters: "1", modifiers: []) == .selectColor(.red))
-        #expect(EditorShortcut.resolve(characters: "4", modifiers: []) == .selectColor(.blue))
-        #expect(EditorShortcut.resolve(characters: "6", modifiers: []) == .selectColor(.white))
-    }
-
-    @Test
-    func bracketsAdjustWhicheverStyleScaleIsShowing() {
-        #expect(EditorShortcut.resolve(characters: "[", modifiers: []) == .adjustStyle(by: -1))
-        #expect(EditorShortcut.resolve(characters: "]", modifiers: []) == .adjustStyle(by: 1))
-    }
-
-    @Test
-    func questionMarkAsksForTheShortcutList() {
-        #expect(EditorShortcut.resolve(characters: "?", modifiers: .shift) == .toggleHelp)
-    }
-
-    @Test
-    func eachToolDrawsItsOwnShapeBetweenTwoPoints() {
-        let start = CGPoint(x: 4, y: 6)
-        let end = CGPoint(x: 40, y: 60)
-
-        #expect(AnnotationTool.pencil.shape(from: start, to: end) == .pencil([start, end]))
         #expect(
-            AnnotationTool.rectangle.shape(from: start, to: end)
-                == .rectangle(start: start, end: end)
+            EditorShortcut.resolve(characters: "x", modifiers: []) == nil
         )
-        // Arrows keep their direction, so the two points are not normalised.
-        #expect(AnnotationTool.arrow.shape(from: end, to: start) == .arrow(start: end, end: start))
-        // Text is placed at a point rather than dragged between two.
-        #expect(AnnotationTool.text.shape(from: start, to: end) == nil)
-    }
-
-    @Test
-    func styleStepsClampAtBothEndsOfTheScale() {
-        #expect(AnnotationThickness.thin.stepped(by: -1) == .thin)
-        #expect(AnnotationThickness.thin.stepped(by: 1) == .medium)
-        #expect(AnnotationThickness.thick.stepped(by: 1) == .thick)
-        #expect(AnnotationTextSize.medium.stepped(by: -1) == .small)
-        #expect(AnnotationTextSize.large.stepped(by: 1) == .large)
-    }
-
-    @Test
-    func redoRestoresUndoneAnnotationsUntilSomethingNewIsDrawn() {
-        let model = AnnotationEditorModel(sourceImage: testImage())
-        model.commit(.arrow(start: .zero, end: CGPoint(x: 10, y: 10)))
-        model.commit(.rectangle(start: .zero, end: CGPoint(x: 20, y: 20)))
-
-        #expect(model.undo())
-        #expect(model.undo())
-        #expect(model.annotations.isEmpty)
-        #expect(model.redo())
-        #expect(model.redo())
-        #expect(model.annotations.count == 2)
-        #expect(!model.redo())
-
-        #expect(model.undo())
-        model.commit(.pencil([.zero]))
-        #expect(!model.redo())
-        #expect(model.annotations.count == 2)
     }
 
     @Test

@@ -12,7 +12,6 @@ final class CaptureCoordinator {
     private let makeOCRResult: ManagedWindowFactory
     private let handleCaptureError: (Error) -> Void
     private let fullscreenRect: () -> CGRect?
-    private let keyboardSelectionEnabled: () -> Bool
     private var overlayController: SelectionOverlayController?
     private var editors: [Int: any ManagedWindow] = [:]
     private var pins: [Int: any ManagedWindow] = [:]
@@ -30,8 +29,7 @@ final class CaptureCoordinator {
             OCRResultWindowController(image: $0, captureRect: $1)
         },
         handleCaptureError: ((Error) -> Void)? = nil,
-        fullscreenRect: @escaping () -> CGRect? = CaptureCoordinator.displayBoundsContainingMouse,
-        keyboardSelectionEnabled: @escaping () -> Bool = { Preferences.keyboardSelection }
+        fullscreenRect: @escaping () -> CGRect? = CaptureCoordinator.displayBoundsContainingMouse
     ) {
         self.captureScreen = captureScreen
         self.makeEditor = makeEditor
@@ -39,7 +37,6 @@ final class CaptureCoordinator {
         self.makeOCRResult = makeOCRResult
         self.handleCaptureError = handleCaptureError ?? Self.presentCaptureError
         self.fullscreenRect = fullscreenRect
-        self.keyboardSelectionEnabled = keyboardSelectionEnabled
     }
 
     func captureFullscreen() {
@@ -100,9 +97,7 @@ final class CaptureCoordinator {
         guard overlayController == nil else { return }
 
         EventLog.shared.write("\(logPrefix)_started")
-        let controller = SelectionOverlayController(
-            keyboardEnabled: keyboardSelectionEnabled()
-        )
+        let controller = SelectionOverlayController()
         overlayController = controller
 
         controller.begin { [weak self] result in

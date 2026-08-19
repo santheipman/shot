@@ -9,12 +9,7 @@ final class EventLog {
     var isFileLoggingEnabled: Bool { fileURL != nil }
 
     private init() {
-        // The environment variable only reaches Shot when it is launched from a
-        // shell, which is not how it normally runs. The defaults key covers a
-        // normal launch: `defaults write dev.sanvq.shot eventLogPath /tmp/shot.log`.
-        let path = ProcessInfo.processInfo.environment["SHOT_EVENT_LOG"]
-            ?? UserDefaults.standard.string(forKey: "eventLogPath")
-        guard let path, !path.isEmpty else {
+        guard let path = ProcessInfo.processInfo.environment["SHOT_EVENT_LOG"] else {
             fileURL = nil
             return
         }
