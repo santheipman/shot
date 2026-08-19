@@ -5,29 +5,72 @@ enum AnnotationTool: String, CaseIterable {
     case rectangle = "Rectangle"
     case arrow = "Arrow"
     case text = "Text"
+
+    /// The shape this tool draws between two image points. Text is placed
+    /// rather than dragged, so it has no two-point shape.
+    func shape(from start: CGPoint, to end: CGPoint) -> AnnotationShape? {
+        switch self {
+        case .pencil: return .pencil([start, end])
+        case .rectangle: return .rectangle(start: start, end: end)
+        case .arrow: return .arrow(start: start, end: end)
+        case .text: return nil
+        }
+    }
 }
 
 enum EditorShortcut: Equatable {
     case save
+    case copy
+    case undo
+    case redo
     case selectTool(AnnotationTool)
+    case selectColor(AnnotationColor)
+    /// Thinner or thicker line, or smaller or larger text for the text tool.
+    case adjustStyle(by: Int)
+    case toggleHelp
 
     static func resolve(
         characters: String?,
         modifiers: NSEvent.ModifierFlags
     ) -> EditorShortcut? {
-        let unsupportedModifiers = modifiers
-            .intersection(.deviceIndependentFlagsMask)
-            .intersection([.command, .control, .option])
-        guard unsupportedModifiers.isEmpty else { return nil }
+        let flags = modifiers.intersection(.deviceIndependentFlagsMask)
+        guard flags.intersection([.control, .option]).isEmpty else { return nil }
+        guard let character = characters?.lowercased() else { return nil }
 
-        switch characters?.lowercased() {
+        if flags.contains(.command) {
+            switch character {
+            case "s": return .save
+            case "c": return .copy
+            case "z": return flags.contains(.shift) ? .redo : .undo
+            default: return nil
+            }
+        }
+
+        switch character {
         case "s": return .save
         case "r": return .selectTool(.rectangle)
         case "p": return .selectTool(.pencil)
         case "a": return .selectTool(.arrow)
         case "t": return .selectTool(.text)
-        default: return nil
+        case "[": return .adjustStyle(by: -1)
+        case "]": return .adjustStyle(by: 1)
+        case "?": return .toggleHelp
+        default:
+            guard
+                let number = Int(character),
+                let color = AnnotationColor.numbered(number)
+            else { return nil }
+            return .selectColor(color)
         }
+    }
+}
+
+extension CaseIterable where Self: Equatable {
+    /// The neighbouring case, clamped at both ends of `allCases`.
+    func stepped(by delta: Int) -> Self {
+        let cases = Array(Self.allCases)
+        guard let index = cases.firstIndex(of: self) else { return self }
+        return cases[min(max(index + delta, 0), cases.count - 1)]
     }
 }
 
@@ -38,6 +81,13 @@ enum AnnotationColor: String, CaseIterable {
     case blue = "Blue"
     case black = "Black"
     case white = "White"
+
+    /// The toolbar order, which the 1-6 shortcuts follow.
+    static func numbered(_ number: Int) -> AnnotationColor? {
+        let cases = Array(allCases)
+        guard cases.indices.contains(number - 1) else { return nil }
+        return cases[number - 1]
+    }
 
     var nsColor: NSColor {
         switch self {
@@ -99,7 +149,7 @@ struct AnnotationStyle {
     var textSize: AnnotationTextSize = .medium
 }
 
-enum AnnotationShape {
+enum AnnotationShape: Equatable {
     case pencil([CGPoint])
     case rectangle(start: CGPoint, end: CGPoint)
     case arrow(start: CGPoint, end: CGPoint)
@@ -114,6 +164,7 @@ struct Annotation {
 final class AnnotationEditorModel {
     let sourceImage: NSImage
     private(set) var annotations: [Annotation] = []
+    private var undone: [Annotation] = []
     var tool: AnnotationTool = .pencil
     var color: AnnotationColor = .red
     var thickness: AnnotationThickness = .medium
@@ -134,12 +185,20 @@ final class AnnotationEditorModel {
                 )
             )
         )
+        undone.removeAll()
     }
 
     @discardableResult
     func undo() -> Bool {
-        guard !annotations.isEmpty else { return false }
-        annotations.removeLast()
+        guard let annotation = annotations.popLast() else { return false }
+        undone.append(annotation)
+        return true
+    }
+
+    @discardableResult
+    func redo() -> Bool {
+        guard let annotation = undone.popLast() else { return false }
+        annotations.append(annotation)
         return true
     }
 }

@@ -16,6 +16,15 @@
   follow the user; selection overlays use it to cover every display.
 - `CaptureCoordinator` owns live editor controllers and removes them in
   `windowWillClose`.
+- With keyboard selection on, the overlay makes the window for the display
+  under the pointer key, and retries once after the run loop settles. This
+  applies to selection overlays only; never do it for editor panels.
+
+## Keyboard control
+
+See `docs/keyboard.md` before changing the keyboard layer. It records the key
+routing order, why the editor has no count prefixes, and why the flipped-axis
+handling lives in `KeyboardSelection` rather than at the call site.
 
 Keep these settings in `PreviewWindowController.swift`:
 

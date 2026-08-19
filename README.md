@@ -9,8 +9,23 @@ a few keystrokes.
 - **Command–Shift–2** captures an area as a movable, resizable floating pin.
 - **Command–Shift–3** captures the display containing the pointer.
 - **Command–Shift–4** captures an area and opens the image editor.
-- Editor shortcuts: **P** Pencil, **R** Rectangle, **A** Arrow, **T** Text,
-  **Command–Z** Undo, **S** Save, and **Escape** Copy and close.
+- The image editor is fully keyboard driven.
+- Optional keyboard selection draws the capture area with vim keys.
+
+## Keyboard
+
+![Moving the cursor and drawing a rectangle in the editor without the mouse](docs/video/keyboard-demo.gif)
+
+The image editor is driven from the keyboard: `P` `R` `A` `T` pick a tool,
+`1`–`6` pick a color, `[` `]` change thickness or text size, and `hjkl` or the
+arrow keys move a cursor on the image to draw shapes without the mouse.
+Command–`S` saves, Command–`C` copies, and Escape copies and closes.
+
+The capture overlay can work the same way once **Keyboard Selection** is turned
+on in the menu bar.
+
+Press `?` in either place for the full list, or read
+[docs/keyboard.md](docs/keyboard.md).
 
 ## Install
 
