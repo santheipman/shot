@@ -4,6 +4,8 @@ Shot can be driven without the mouse in two places: choosing the capture area,
 and drawing on the capture afterwards. Both share one motion keymap, so `hjkl`
 means the same thing in either.
 
+![Moving the cursor and drawing a rectangle in the editor without the mouse](video/keyboard-demo.gif)
+
 Press `?` in either place to see the keys without leaving the app. The editor
 also has a `?` button in its toolbar.
 

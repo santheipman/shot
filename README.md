@@ -14,6 +14,8 @@ a few keystrokes.
 
 ## Keyboard
 
+![Moving the cursor and drawing a rectangle in the editor without the mouse](docs/video/keyboard-demo.gif)
+
 The image editor is driven from the keyboard: `P` `R` `A` `T` pick a tool,
 `1`–`6` pick a color, `[` `]` change thickness or text size, and `hjkl` or the
 arrow keys move a cursor on the image to draw shapes without the mouse.
