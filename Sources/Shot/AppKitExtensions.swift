@@ -23,3 +23,14 @@ extension NSScreen {
 extension NSEvent {
     var isEscapeKey: Bool { keyCode == 53 } // kVK_Escape
 }
+
+extension CGRect {
+    init(spanning first: CGPoint, _ second: CGPoint) {
+        self.init(
+            x: min(first.x, second.x),
+            y: min(first.y, second.y),
+            width: abs(second.x - first.x),
+            height: abs(second.y - first.y)
+        )
+    }
+}

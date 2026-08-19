@@ -102,6 +102,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(NSMenuItem.separator())
 
+        let keyboardSelectionItem = NSMenuItem(
+            title: "Keyboard Selection",
+            action: #selector(toggleKeyboardSelection(_:)),
+            keyEquivalent: ""
+        )
+        keyboardSelectionItem.target = self
+        keyboardSelectionItem.state = Preferences.keyboardSelection ? .on : .off
+        keyboardSelectionItem.toolTip =
+            "Draw the capture area with vim keys instead of the mouse."
+        menu.addItem(keyboardSelectionItem)
+        menu.addItem(NSMenuItem.separator())
+
         let shortcutSetupItem = NSMenuItem(
             title: "Shortcut Setup…",
             action: #selector(showShortcutSetup),
@@ -144,6 +156,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         shortcutSetupWindowController = controller
         controller.present()
+    }
+
+    @objc private func toggleKeyboardSelection(_ sender: NSMenuItem) {
+        Preferences.keyboardSelection.toggle()
+        sender.state = Preferences.keyboardSelection ? .on : .off
+        EventLog.shared.write(
+            "keyboard_selection enabled=\(Preferences.keyboardSelection)"
+        )
     }
 
     @objc private func quit() {
