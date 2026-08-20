@@ -1,8 +1,20 @@
 - Keep solutions simple. Do not overengineer.
 - We and this machine is the only user of this app for now.
+- `README.md` is for Shot users. Keep agent-only and internal development
+  workflows in `AGENTS.md` or focused developer documentation.
+- Treat this repository as public. Never commit or push personal or sensitive
+  information, credentials, private identifiers, logs, screenshots, or
+  recordings. Check staged changes and new files before committing or pushing.
 - Run `swift test` after code changes.
 - After making an app change, rebuild and restart Shot with
   `./scripts/rebuild-and-restart.sh`.
+- When the user explicitly asks for a manual test, use the disposable Tart VM:
+  `make vm`. Exercise the changed behavior in `shot-play`, inspect
+  `make vm-logs`, report what passed or failed, then run `make vm-clean`.
+  Setup and internals: `scripts/vm-golden.md`.
+- Only record a VM demo when the user explicitly asks. Use
+  `make vm-record NAME=feature SECONDS=40`; recordings go to the git-ignored
+  `recordings/` directory.
 
 ## AeroSpace compatibility
 

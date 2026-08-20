@@ -73,6 +73,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showShortcutSetup()
             }
         }
+
+        runManualTestActionIfRequested()
+    }
+
+    private func runManualTestActionIfRequested() {
+        guard let action = ProcessInfo.processInfo.environment["SHOT_MANUAL_TEST_ACTION"] else {
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch action {
+            case "area":
+                self.captureCoordinator.beginAreaSelection()
+            case "pin":
+                self.captureCoordinator.beginPinAreaSelection()
+            case "text":
+                self.captureCoordinator.beginTextAreaSelection()
+            case "fullscreen":
+                self.captureCoordinator.captureFullscreen()
+            default:
+                EventLog.shared.write("manual_test_action_ignored action=\(action)")
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
