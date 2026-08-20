@@ -228,6 +228,8 @@ private final class PreviewViewController: NSViewController {
             NSImage(systemSymbolName: "arrow.up.left", accessibilityDescription: "Select"),
             NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil"),
             NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Rectangle"),
+            NSImage(systemSymbolName: "line.diagonal", accessibilityDescription: "Line"),
+            Self.dashedLineToolImage(),
             NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow"),
             NSImage(systemSymbolName: "textformat", accessibilityDescription: "Text"),
         ].compactMap { $0 }
@@ -270,8 +272,10 @@ private final class PreviewViewController: NSViewController {
         toolControl.setToolTip("Select (V)", forSegment: 0)
         toolControl.setToolTip("Pencil (P)", forSegment: 1)
         toolControl.setToolTip("Rectangle (R)", forSegment: 2)
-        toolControl.setToolTip("Arrow (A)", forSegment: 3)
-        toolControl.setToolTip("Text (T)", forSegment: 4)
+        toolControl.setToolTip("Line (L)", forSegment: 3)
+        toolControl.setToolTip("Dashed Line (D)", forSegment: 4)
+        toolControl.setToolTip("Arrow (A)", forSegment: 5)
+        toolControl.setToolTip("Text (T)", forSegment: 6)
 
         deleteButton.bezelStyle = .texturedRounded
         deleteButton.toolTip = "Delete selected annotation (Delete)"
@@ -405,6 +409,26 @@ private final class PreviewViewController: NSViewController {
             styleControl.toolTip = "Line thickness"
         }
     }
+
+    private static func dashedLineToolImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+            NSColor.labelColor.setStroke()
+            let path = NSBezierPath()
+            path.lineWidth = 1.5
+            path.lineCapStyle = .round
+            let dash: [CGFloat] = [3, 2]
+            dash.withUnsafeBufferPointer {
+                path.setLineDash($0.baseAddress, count: $0.count, phase: 0)
+            }
+            path.move(to: NSPoint(x: 3, y: 3))
+            path.line(to: NSPoint(x: 15, y: 15))
+            path.stroke()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Dashed Line"
+        return image
+    }
 }
 
 private final class InlineTextView: NSTextView {
@@ -520,6 +544,8 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             return
         case .pencil: draft = .pencil([point])
         case .rectangle: draft = .rectangle(start: point, end: point)
+        case .line: draft = .line(start: point, end: point)
+        case .dashedLine: draft = .dashedLine(start: point, end: point)
         case .arrow: draft = .arrow(start: point, end: point)
         case .text:
             beginTextEditing(at: point)
@@ -568,6 +594,10 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             self.draft = .pencil(points)
         case let .rectangle(start, _):
             self.draft = .rectangle(start: start, end: point)
+        case let .line(start, _):
+            self.draft = .line(start: start, end: point)
+        case let .dashedLine(start, _):
+            self.draft = .dashedLine(start: start, end: point)
         case let .arrow(start, _):
             self.draft = .arrow(start: start, end: point)
         case .text:

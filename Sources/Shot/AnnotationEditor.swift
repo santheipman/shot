@@ -4,6 +4,8 @@ enum AnnotationTool: String, CaseIterable {
     case select = "Select"
     case pencil = "Pencil"
     case rectangle = "Rectangle"
+    case line = "Line"
+    case dashedLine = "Dashed Line"
     case arrow = "Arrow"
     case text = "Text"
 }
@@ -27,6 +29,8 @@ enum EditorShortcut: Equatable {
         case "r": return .selectTool(.rectangle)
         case "p": return .selectTool(.pencil)
         case "a": return .selectTool(.arrow)
+        case "l": return .selectTool(.line)
+        case "d": return .selectTool(.dashedLine)
         case "t": return .selectTool(.text)
         default: return nil
         }
@@ -104,6 +108,8 @@ struct AnnotationStyle: Equatable {
 enum AnnotationShape: Equatable {
     case pencil([CGPoint])
     case rectangle(start: CGPoint, end: CGPoint)
+    case line(start: CGPoint, end: CGPoint)
+    case dashedLine(start: CGPoint, end: CGPoint)
     case arrow(start: CGPoint, end: CGPoint)
     case text(origin: CGPoint, text: String, maxWidth: CGFloat)
 }
@@ -203,6 +209,10 @@ enum AnnotationGeometry {
             }
         case let .rectangle(start, end):
             return rect(from: start, to: end)
+        case let .line(start, end):
+            return rect(from: start, to: end)
+        case let .dashedLine(start, end):
+            return rect(from: start, to: end)
         case let .arrow(start, end):
             return ([start, end] + arrowHeadPoints(
                 start: start,
@@ -247,6 +257,10 @@ enum AnnotationGeometry {
             return zip(corners, corners.dropFirst() + [corners[0]]).contains {
                 distance(from: point, toSegmentFrom: $0, to: $1) <= tolerance
             }
+        case let .dashedLine(start, end):
+            return distance(from: point, toSegmentFrom: start, to: end) <= tolerance
+        case let .line(start, end):
+            return distance(from: point, toSegmentFrom: start, to: end) <= tolerance
         case let .arrow(start, end):
             let head = arrowHeadPoints(
                 start: start,
@@ -270,6 +284,10 @@ enum AnnotationGeometry {
             shape = .pencil(points.map { $0 + delta })
         case let .rectangle(start, end):
             shape = .rectangle(start: start + delta, end: end + delta)
+        case let .line(start, end):
+            shape = .line(start: start + delta, end: end + delta)
+        case let .dashedLine(start, end):
+            shape = .dashedLine(start: start + delta, end: end + delta)
         case let .arrow(start, end):
             shape = .arrow(start: start + delta, end: end + delta)
         case let .text(origin, text, maxWidth):
@@ -508,6 +526,21 @@ enum AnnotationRenderer {
                     height: abs(end.y - start.y)
                 )
             )
+        case let .dashedLine(start, end):
+            let thickness = annotation.style.thickness.points
+            context.setLineDash(
+                phase: 0,
+                lengths: [thickness * 4, thickness * 3]
+            )
+            context.beginPath()
+            context.move(to: start)
+            context.addLine(to: end)
+            context.strokePath()
+        case let .line(start, end):
+            context.beginPath()
+            context.move(to: start)
+            context.addLine(to: end)
+            context.strokePath()
         case let .arrow(start, end):
             context.beginPath()
             context.move(to: start)

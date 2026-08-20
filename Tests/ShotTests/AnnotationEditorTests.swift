@@ -11,6 +11,8 @@ struct AnnotationEditorTests {
             ("r", EditorShortcut.selectTool(.rectangle)),
             ("p", EditorShortcut.selectTool(.pencil)),
             ("a", EditorShortcut.selectTool(.arrow)),
+            ("l", EditorShortcut.selectTool(.line)),
+            ("d", EditorShortcut.selectTool(.dashedLine)),
             ("t", EditorShortcut.selectTool(.text)),
             ("R", EditorShortcut.selectTool(.rectangle)),
         ]
@@ -113,6 +115,62 @@ struct AnnotationEditorTests {
                 CGPoint(x: 30, y: 30),
                 annotation: rectangle,
                 tolerance: 4
+            )
+        )
+    }
+
+    @Test
+    func dashedLineCanBeHitTestedAndMoved() {
+        let annotation = Annotation(
+            shape: .dashedLine(
+                start: CGPoint(x: 10, y: 20),
+                end: CGPoint(x: 60, y: 20)
+            ),
+            style: AnnotationStyle(color: .red, thickness: .thin)
+        )
+
+        #expect(
+            AnnotationGeometry.contains(
+                CGPoint(x: 35, y: 23),
+                annotation: annotation,
+                tolerance: 4
+            )
+        )
+        #expect(
+            AnnotationGeometry.translated(
+                annotation,
+                by: CGPoint(x: 5, y: 10)
+            ).shape == .dashedLine(
+                start: CGPoint(x: 15, y: 30),
+                end: CGPoint(x: 65, y: 30)
+            )
+        )
+    }
+
+    @Test
+    func lineCanBeHitTestedAndMoved() {
+        let annotation = Annotation(
+            shape: .line(
+                start: CGPoint(x: 10, y: 20),
+                end: CGPoint(x: 60, y: 20)
+            ),
+            style: AnnotationStyle(color: .blue, thickness: .medium)
+        )
+
+        #expect(
+            AnnotationGeometry.contains(
+                CGPoint(x: 35, y: 23),
+                annotation: annotation,
+                tolerance: 4
+            )
+        )
+        #expect(
+            AnnotationGeometry.translated(
+                annotation,
+                by: CGPoint(x: 5, y: 10)
+            ).shape == .line(
+                start: CGPoint(x: 15, y: 30),
+                end: CGPoint(x: 65, y: 30)
             )
         )
     }
