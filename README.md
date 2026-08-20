@@ -9,8 +9,12 @@ a few keystrokes.
 - **Command–Shift–2** captures an area as a movable, resizable floating pin.
 - **Command–Shift–3** captures the display containing the pointer.
 - **Command–Shift–4** captures an area and opens the image editor.
-- Editor shortcuts: **P** Pencil, **R** Rectangle, **A** Arrow, **T** Text,
-  **Command–Z** Undo, **S** Save, and **Escape** Copy and close.
+- The editor opens with Rectangle selected. Use **V** Select, **P** Pencil,
+  **R** Rectangle, **A** Arrow, or **T** Text. Selected annotations can be moved
+  or deleted.
+- Editor shortcuts: **Command–Z** Undo, **Command–Shift–Z** Redo, **Delete**
+  Remove selected annotation, **S** Save, and **Escape** Deselect or Copy and
+  close.
 
 ## Install
 

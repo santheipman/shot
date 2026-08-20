@@ -7,6 +7,7 @@ struct AnnotationEditorTests {
     @Test(
         arguments: [
             ("s", EditorShortcut.save),
+            ("v", EditorShortcut.selectTool(.select)),
             ("r", EditorShortcut.selectTool(.rectangle)),
             ("p", EditorShortcut.selectTool(.pencil)),
             ("a", EditorShortcut.selectTool(.arrow)),
@@ -21,6 +22,13 @@ struct AnnotationEditorTests {
         #expect(
             EditorShortcut.resolve(characters: key, modifiers: []) == expected
         )
+    }
+
+    @Test
+    func rectangleIsTheDefaultTool() {
+        let model = AnnotationEditorModel(sourceImage: testImage())
+
+        #expect(model.tool == .rectangle)
     }
 
     @Test
@@ -44,6 +52,88 @@ struct AnnotationEditorTests {
         #expect(model.annotations.count == 1)
         #expect(model.undo())
         #expect(!model.undo())
+    }
+
+    @Test
+    func moveCanBeUndoneAndRedoneAsOneChange() {
+        let model = AnnotationEditorModel(sourceImage: testImage())
+        model.commit(
+            .rectangle(
+                start: CGPoint(x: 10, y: 20),
+                end: CGPoint(x: 40, y: 60)
+            )
+        )
+        let original = model.annotations[0]
+        let moved = AnnotationGeometry.translated(
+            original,
+            by: CGPoint(x: 15, y: 25)
+        )
+
+        #expect(model.replace(moved))
+        #expect(model.annotations == [moved])
+        #expect(model.undo())
+        #expect(model.annotations == [original])
+        #expect(model.redo())
+        #expect(model.annotations == [moved])
+    }
+
+    @Test
+    func removeCanBeUndoneAndNewChangeClearsRedo() {
+        let model = AnnotationEditorModel(sourceImage: testImage())
+        model.commit(.arrow(start: .zero, end: CGPoint(x: 10, y: 10)))
+        let annotation = model.annotations[0]
+
+        #expect(model.remove(id: annotation.id))
+        #expect(model.annotations.isEmpty)
+        #expect(model.undo())
+        #expect(model.annotations == [annotation])
+        model.commit(.pencil([CGPoint(x: 4, y: 4)]))
+        #expect(!model.redo())
+    }
+
+    @Test
+    func annotationHitTestingUsesStrokeTolerance() {
+        let rectangle = Annotation(
+            shape: .rectangle(
+                start: CGPoint(x: 10, y: 10),
+                end: CGPoint(x: 50, y: 50)
+            ),
+            style: AnnotationStyle(color: .red, thickness: .thin)
+        )
+
+        #expect(
+            AnnotationGeometry.contains(
+                CGPoint(x: 30, y: 13),
+                annotation: rectangle,
+                tolerance: 4
+            )
+        )
+        #expect(
+            !AnnotationGeometry.contains(
+                CGPoint(x: 30, y: 30),
+                annotation: rectangle,
+                tolerance: 4
+            )
+        )
+    }
+
+    @Test
+    func annotationMovementIsConstrainedToImageBounds() {
+        let annotation = Annotation(
+            shape: .rectangle(
+                start: CGPoint(x: 20, y: 30),
+                end: CGPoint(x: 60, y: 70)
+            ),
+            style: AnnotationStyle(color: .red, thickness: .medium)
+        )
+
+        #expect(
+            AnnotationGeometry.constrainedTranslation(
+                of: annotation,
+                proposed: CGPoint(x: -100, y: 100),
+                imageSize: CGSize(width: 200, height: 100)
+            ) == CGPoint(x: -20, y: 30)
+        )
     }
 
     @Test

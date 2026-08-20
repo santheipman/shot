@@ -61,6 +61,8 @@ final class PreviewWindowController: ManagedWindowController {
         }
         panel.onEscape = { [weak editor] in editor?.handleEscape() }
         panel.onUndo = { [weak editor] in editor?.undo() }
+        panel.onRedo = { [weak editor] in editor?.redo() }
+        panel.onDelete = { [weak editor] in editor?.deleteSelection() }
         panel.shouldHandleCanvasShortcuts = { [weak editor] in
             editor?.isEditingText == false
         }
@@ -167,6 +169,8 @@ final class PreviewWindowController: ManagedWindowController {
 private final class EditorPanel: NSPanel {
     var onEscape: (() -> Void)?
     var onUndo: (() -> Void)?
+    var onRedo: (() -> Void)?
+    var onDelete: (() -> Void)?
     var onShortcut: ((EditorShortcut) -> Void)?
     var shouldHandleCanvasShortcuts: (() -> Bool)?
 
@@ -179,9 +183,19 @@ private final class EditorPanel: NSPanel {
             super.keyDown(with: event)
             return
         }
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers?.lowercased() == "z" {
-            onUndo?()
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.charactersIgnoringModifiers?.lowercased() == "z" {
+            if modifiers == .command {
+                onUndo?()
+                return
+            }
+            if modifiers == [.command, .shift] {
+                onRedo?()
+                return
+            }
+        }
+        if modifiers.isEmpty, (event.keyCode == 51 || event.keyCode == 117) {
+            onDelete?()
             return
         }
         if !event.isARepeat,
@@ -201,6 +215,7 @@ private final class PreviewViewController: NSViewController {
     private let canvas: AnnotationCanvasView
     private let toolControl: NSSegmentedControl
     private let styleControl: NSPopUpButton
+    private let deleteButton: NSButton
     var onFinish: (() -> Void)?
     var onSave: (() -> Void)?
     var isEditingText: Bool { canvas.isEditingText }
@@ -210,6 +225,7 @@ private final class PreviewViewController: NSViewController {
         canvas = AnnotationCanvasView(model: model)
         styleControl = NSPopUpButton()
         let toolImages = [
+            NSImage(systemSymbolName: "arrow.up.left", accessibilityDescription: "Select"),
             NSImage(systemSymbolName: "pencil", accessibilityDescription: "Pencil"),
             NSImage(systemSymbolName: "rectangle", accessibilityDescription: "Rectangle"),
             NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Arrow"),
@@ -221,9 +237,19 @@ private final class PreviewViewController: NSViewController {
             target: nil,
             action: nil
         )
+        deleteButton = NSButton(
+            image: NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete")!,
+            target: nil,
+            action: nil
+        )
         super.init(nibName: nil, bundle: nil)
         toolControl.target = self
         toolControl.action = #selector(changeTool(_:))
+        deleteButton.target = self
+        deleteButton.action = #selector(deleteSelection)
+        canvas.onSelectionChanged = { [weak self] hasSelection in
+            self?.deleteButton.isEnabled = hasSelection
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -238,13 +264,18 @@ private final class PreviewViewController: NSViewController {
         canvas.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(canvas)
 
-        toolControl.selectedSegment = 0
+        toolControl.selectedSegment = AnnotationTool.allCases.firstIndex(of: model.tool) ?? 0
         toolControl.segmentStyle = .texturedRounded
         toolControl.setAccessibilityLabel("Annotation tool")
-        toolControl.setToolTip("Pencil (P)", forSegment: 0)
-        toolControl.setToolTip("Rectangle (R)", forSegment: 1)
-        toolControl.setToolTip("Arrow (A)", forSegment: 2)
-        toolControl.setToolTip("Text (T)", forSegment: 3)
+        toolControl.setToolTip("Select (V)", forSegment: 0)
+        toolControl.setToolTip("Pencil (P)", forSegment: 1)
+        toolControl.setToolTip("Rectangle (R)", forSegment: 2)
+        toolControl.setToolTip("Arrow (A)", forSegment: 3)
+        toolControl.setToolTip("Text (T)", forSegment: 4)
+
+        deleteButton.bezelStyle = .texturedRounded
+        deleteButton.toolTip = "Delete selected annotation (Delete)"
+        deleteButton.isEnabled = false
 
         let color = NSPopUpButton()
         color.addItems(withTitles: AnnotationColor.allCases.map(\.rawValue))
@@ -260,7 +291,7 @@ private final class PreviewViewController: NSViewController {
         save.toolTip = "Save (S)"
 
         let controls = NSStackView(views: [
-            toolControl, color, styleControl, NSView(), save,
+            toolControl, color, styleControl, deleteButton, NSView(), save,
         ])
         controls.translatesAutoresizingMaskIntoConstraints = false
         controls.orientation = .horizontal
@@ -304,15 +335,25 @@ private final class PreviewViewController: NSViewController {
     }
 
     func handleEscape() {
-        if !canvas.endTextEditing() {
+        if !canvas.endTextEditing(), !canvas.clearSelection() {
             onFinish?()
         }
     }
 
     @objc func undo() {
         if model.undo() {
-            canvas.needsDisplay = true
+            canvas.historyDidChange()
         }
+    }
+
+    @objc func redo() {
+        if model.redo() {
+            canvas.historyDidChange()
+        }
+    }
+
+    @objc func deleteSelection() {
+        canvas.deleteSelection()
     }
 
     @objc func save() {
@@ -322,6 +363,7 @@ private final class PreviewViewController: NSViewController {
     func selectTool(_ tool: AnnotationTool) {
         canvas.endTextEditing()
         model.tool = tool
+        canvas.toolDidChange()
         if let index = AnnotationTool.allCases.firstIndex(of: tool) {
             toolControl.selectedSegment = index
         }
@@ -379,8 +421,18 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     private var textEditor: InlineTextView?
     private var textOrigin: CGPoint?
     private var textMaxWidth: CGFloat?
+    private var selectedAnnotationID: UUID? {
+        didSet {
+            guard oldValue != selectedAnnotationID else { return }
+            onSelectionChanged?(selectedAnnotationID != nil)
+        }
+    }
+    private var dragOrigin: CGPoint?
+    private var draggedAnnotation: Annotation?
+    private var moveDraft: Annotation?
 
     var isEditingText: Bool { textEditor != nil }
+    var onSelectionChanged: ((Bool) -> Void)?
 
     init(model: AnnotationEditorModel) {
         self.model = model
@@ -399,7 +451,13 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
     }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: model.tool == .text ? .iBeam : .crosshair)
+        let cursor: NSCursor
+        switch model.tool {
+        case .select: cursor = .arrow
+        case .text: cursor = .iBeam
+        default: cursor = .crosshair
+        }
+        addCursorRect(bounds, cursor: cursor)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -419,7 +477,12 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             hints: [.interpolation: NSImageInterpolation.high]
         )
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        var annotations = model.annotations
+        var annotations = model.annotations.map { annotation in
+            if let moveDraft, annotation.id == moveDraft.id {
+                return moveDraft
+            }
+            return annotation
+        }
         if let draft {
             annotations.append(
                 Annotation(
@@ -434,12 +497,27 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
             imageSize: model.sourceImage.size,
             destinationRect: imageRect
         )
+        if let selected = selectedAnnotationForDisplay() {
+            drawSelection(around: selected, imageRect: imageRect, context: context)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         endTextEditing()
         guard let point = imagePoint(for: event) else { return }
         switch model.tool {
+        case .select:
+            selectedAnnotationID = annotation(at: point)?.id
+            if let selectedAnnotationID,
+               let annotation = model.annotation(id: selectedAnnotationID) {
+                dragOrigin = point
+                draggedAnnotation = annotation
+                moveDraft = annotation
+            } else {
+                endMove()
+            }
+            needsDisplay = true
+            return
         case .pencil: draft = .pencil([point])
         case .rectangle: draft = .rectangle(start: point, end: point)
         case .arrow: draft = .arrow(start: point, end: point)
@@ -452,10 +530,25 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
 
     override func mouseDragged(with event: NSEvent) {
         guard let point = imagePoint(for: event, clamped: true) else { return }
+        if model.tool == .select {
+            updateMove(with: point)
+            return
+        }
         updateDraft(with: point)
     }
 
     override func mouseUp(with event: NSEvent) {
+        if model.tool == .select {
+            if let point = imagePoint(for: event, clamped: true) {
+                updateMove(with: point)
+            }
+            if let moveDraft {
+                model.replace(moveDraft)
+            }
+            endMove()
+            needsDisplay = true
+            return
+        }
         if let point = imagePoint(for: event, clamped: true) {
             updateDraft(with: point)
         }
@@ -483,8 +576,100 @@ private final class AnnotationCanvasView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
+    private func annotation(at point: CGPoint) -> Annotation? {
+        let imageRect = AnnotationRenderer.aspectFitRect(
+            imageSize: model.sourceImage.size,
+            in: bounds
+        )
+        let scale = imageRect.width / max(model.sourceImage.size.width, 1)
+        let tolerance = 8 / max(scale, 0.001)
+        return model.annotations.reversed().first {
+            AnnotationGeometry.contains(point, annotation: $0, tolerance: tolerance)
+        }
+    }
+
+    private func updateMove(with point: CGPoint) {
+        guard let dragOrigin, let draggedAnnotation else { return }
+        let proposed = CGPoint(x: point.x - dragOrigin.x, y: point.y - dragOrigin.y)
+        let delta = AnnotationGeometry.constrainedTranslation(
+            of: draggedAnnotation,
+            proposed: proposed,
+            imageSize: model.sourceImage.size
+        )
+        moveDraft = AnnotationGeometry.translated(draggedAnnotation, by: delta)
+        needsDisplay = true
+    }
+
+    private func endMove() {
+        dragOrigin = nil
+        draggedAnnotation = nil
+        moveDraft = nil
+    }
+
+    private func selectedAnnotationForDisplay() -> Annotation? {
+        if let moveDraft { return moveDraft }
+        guard let selectedAnnotationID else { return nil }
+        return model.annotation(id: selectedAnnotationID)
+    }
+
+    private func drawSelection(
+        around annotation: Annotation,
+        imageRect: CGRect,
+        context: CGContext
+    ) {
+        let scale = imageRect.width / max(model.sourceImage.size.width, 1)
+        let annotationBounds = AnnotationGeometry.bounds(of: annotation)
+        var displayBounds = CGRect(
+            x: imageRect.minX + annotationBounds.minX * scale,
+            y: imageRect.minY + annotationBounds.minY * scale,
+            width: annotationBounds.width * scale,
+            height: annotationBounds.height * scale
+        ).insetBy(dx: -4, dy: -4)
+        displayBounds = displayBounds.intersection(bounds)
+        guard !displayBounds.isNull else { return }
+        context.saveGState()
+        context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        context.setLineWidth(1.5)
+        context.setLineDash(phase: 0, lengths: [4, 3])
+        context.stroke(displayBounds)
+        context.restoreGState()
+    }
+
     func updateCursor() {
         window?.invalidateCursorRects(for: self)
+    }
+
+    func toolDidChange() {
+        clearSelection()
+        endMove()
+        updateCursor()
+        needsDisplay = true
+    }
+
+    @discardableResult
+    func clearSelection() -> Bool {
+        guard selectedAnnotationID != nil else { return false }
+        selectedAnnotationID = nil
+        endMove()
+        needsDisplay = true
+        return true
+    }
+
+    func deleteSelection() {
+        guard let selectedAnnotationID, model.remove(id: selectedAnnotationID) else {
+            return
+        }
+        self.selectedAnnotationID = nil
+        endMove()
+        needsDisplay = true
+    }
+
+    func historyDidChange() {
+        if let selectedAnnotationID, model.annotation(id: selectedAnnotationID) == nil {
+            self.selectedAnnotationID = nil
+        }
+        endMove()
+        needsDisplay = true
     }
 
     func updateTextEditorStyle() {
